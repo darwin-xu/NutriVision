@@ -1,0 +1,67 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Project-specific runtime uploads (do not commit user uploads / generated images)
+/uploads/
+server/uploads/
+
+# Environment / secret files
+.env
+.env.*
+.env.local
+.env.test
+.env.production
+credentials.json
+secrets.json
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+.AppleDouble
+._*
+Thumbs.db
+Icon\r
+
+# IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Build outputs / caches
+dist/
+build/
+coverage/
+.nyc_output/
+.cache/
+.parcel-cache/
+/.pnp/
+.pnp.js
+
+# TypeScript
+*.tsbuildinfo
+
+# Misc temporary files
+*.local
+*.tmp
+*.temp
+*.swp
+*~
+
+# Arduino / embedded build artifacts
+hardware/build/
+hardware/.pio/
+hardware/.pioenvs/
+*.hex
+*.elf
+
+# Dependency directories at any level
+**/node_modules/
+
+# Keep sample images and committed assets in server/sample-images/ (do not ignore)

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Food Analysis & Nutrition Tracker</title>
+        <link rel="stylesheet" href="css/index.css" />
+    </head>
+    <body>
+        <div class="container">
+            <div class="welcome-card">
+                <div class="header">
+                    <h1>🍎 Food Analysis System v2</h1>
+                    <p>
+                        Welcome to the automated food analysis and nutrition
+                        tracking system. Our equipment will automatically
+                        capture, weigh, and analyze your food to provide
+                        detailed nutritional information and health suggestions.
+                    </p>
+                </div>
+
+                <div class="status-section">
+                    <div>
+                        <span class="status-indicator"></span>
+                        <span class="status-text" id="statusText"
+                            >System Ready - Waiting for Equipment</span
+                        >
+                    </div>
+                    <div class="instructions">
+                        The system is ready to receive data from the food
+                        analysis equipment. Place your food on the scale and the
+                        analysis will begin automatically.
+                    </div>
+                    <div class="last-update" id="lastUpdate"></div>
+                </div>
+            </div>
+
+            <div id="loadingSection" class="loading">
+                <div class="spinner"></div>
+                <p>Analyzing food data...</p>
+            </div>
+
+            <div id="resultsSection" class="results-section">
+                <!-- Results will be displayed here -->
+            </div>
+        </div>
+
+        <script src="js/index.js"></script>
+    </body>
+</html>
