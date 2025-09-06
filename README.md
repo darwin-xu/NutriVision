@@ -1,6 +1,6 @@
 # NutriVision
 
-A lightweight prototype for food image recognition and nutrition analysis. This repository contains a Node.js server, simple front-end pages, sample images, and Arduino/hardware code to collect images/weights.
+A lightweight prototype for food image recognition and nutrition analysis. This repository contains a Node.js server, simple front-end pages, sample images, and device code to collect images/weights.
 
 ## Key components
 
@@ -9,8 +9,7 @@ A lightweight prototype for food image recognition and nutrition analysis. This 
   - `package.json` — scripts and dependencies.
   - `public/` — static front-end pages (simple demo clients).
   - `uploads/` — runtime folder where uploaded images are stored (not committed).
-- `hardware/` — Arduino/embedded sketches and related notes (e.g. `ardu_cam_scale.ino`).
-- `docs/` — design notes and wiring documentation.
+- `device/` — Arduino/embedded sketches and related notes (e.g. `ardu_cam_scale.ino`).
 
 ## Features
 
@@ -23,7 +22,7 @@ A lightweight prototype for food image recognition and nutrition analysis. This 
 
 - Node.js 18+ (or LTS compatible)
 - npm (or yarn/pnpm) for installing dependencies
-- Optional: Arduino IDE or PlatformIO to load sketches in `hardware/`
+- Arduino IDE to load sketches in `device/`
 
 ## Quickstart (server)
 
@@ -105,12 +104,12 @@ The server includes an equipment simulator useful for development and demoing fl
 
 The simulator script is `server/equipment-simulator.js`.
 
-## Hardware
+## Device
 
-The `hardware/` directory contains an Arduino sketch `ardu_cam_scale.ino` used to capture images and weight from an attached load cell/camera combo. See `docs/pin_connections.md` and `docs/Design.md` for wiring and design notes.
+The `device/` directory contains an Arduino sketch `ardu_cam_scale.ino` used to capture images and weight from an attached load cell/camera combo. See `device/docs/pin_connections.md` and `device/docs/Design.md` for wiring and design notes.
 
-- Use the Arduino IDE or PlatformIO to upload sketches.
-- The hardware side should POST image and weight to the server's `/api/analyze-food` endpoint.
+- Use the Arduino IDE to upload sketches.
+- The device side should POST image and weight to the server's `/api/analyze-food` endpoint.
 
 ## Development notes
 
