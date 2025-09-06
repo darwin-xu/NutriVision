@@ -24,7 +24,7 @@ HX711 scale;
 // Create ArduCAM instance for OV5642
 ArduCAM myCAM(OV5642, CS_PIN);
 
-// WiFi credentials (optional - for web server)
+// WiFi credentials
 const char* ssid     = "a-tp";
 const char* password = "opop9090";
 
@@ -41,6 +41,9 @@ const unsigned long WEIGHT_DEBOUNCE_TIME = 2000; // 2 seconds debounce
 
 void setup()
 {
+    // ESP32 will have a window of 1 second after boot where serial is
+    // unavailable.
+    delay(1000);
     Serial.begin(115200);
 
     // Initialize I2C (uses default pins A4=SDA, A5=SCL)
@@ -72,6 +75,8 @@ void setup()
         Serial.print(vid, HEX);
         Serial.print(", PID: 0x");
         Serial.println(pid, HEX);
+
+        // Halt execution on error
         while (1)
             ;
     }
@@ -89,13 +94,19 @@ void setup()
     delay(1000);
     myCAM.clear_fifo_flag();
 
-    // Optional: Setup WiFi and web server
+    // Setup WiFi and web server
     setupWiFi();
     setupWebServer();
 
     // Init scale
     Serial.println("Initializing the scale");
     scale.begin(DOUT, CLK);
+
+    while (!scale.ready())
+    {
+        /* code */
+    }
+    
 
     // Calibration factor will be the (reading) / (known weight)
     // Adjust this calibration factor as needed
@@ -343,6 +354,10 @@ void setupWiFi()
     else
     {
         Serial.println("\nWiFi connection failed. Continuing without WiFi.");
+
+        // Halt execution on error
+        while (1)
+            ;
     }
 }
 
