@@ -1,7 +1,7 @@
 #include "HX711.h"
 
-#define DT  3 // Data pin connects to Digital 3
-#define SCK 2 // Clock pin connects to digital 2
+#define DT  2 // Data pin connects to Digital 2
+#define SCK 3 // Clock pin connects to digital 3
 
 HX711 scale;
 
