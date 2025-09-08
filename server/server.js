@@ -45,9 +45,9 @@ const storage = multer.diskStorage({
         cb(
             null,
             file.fieldname +
-                '-' +
-                uniqueSuffix +
-                path.extname(file.originalname)
+            '-' +
+            uniqueSuffix +
+            path.extname(file.originalname)
         );
     },
 });

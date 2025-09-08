@@ -39,12 +39,12 @@ bool                weightDetected       = false;
 unsigned long       lastWeightCheck      = 0;
 const unsigned long WEIGHT_DEBOUNCE_TIME = 2000; // 2 seconds debounce
 
-void setup()
+// ***************************************************************************
+// Setup functions
+
+void setupCamera()
 {
-    // ESP32 will have a window of 1 second after boot where serial is
-    // unavailable.
-    delay(1000);
-    Serial.begin(115200);
+    Serial.println("Initializing the ArduCAM...");
 
     // Initialize I2C (uses default pins A4=SDA, A5=SCL)
     Wire.begin();
@@ -93,148 +93,75 @@ void setup()
 
     delay(1000);
     myCAM.clear_fifo_flag();
+    Serial.println("The ArduCAM initialized.");
+}
 
-    // Setup WiFi and web server
-    setupWiFi();
-    setupWebServer();
-
+void setupScale()
+{
     // Init scale
     Serial.println("Initializing the scale");
     scale.begin(DOUT, CLK);
 
-    while (!scale.ready())
+    int i = 0;
+    while (true)
     {
-        /* code */
-    }
-    
-
-    // Calibration factor will be the (reading) / (known weight)
-    // Adjust this calibration factor as needed
-    scale.set_scale(398.f); // this value is obtained by calibrating the scale
-                            // with known weights
-    if (scale.is_ready())
-    {
-        Serial.println("Setup complete. Scale ready!");
+        ++i;
+        if (scale.is_ready())
+            break;
+        if (i == 10)
+            Serial.println(
+                "The scale seems to fail to initialize after 10 seconds.");
+        delay(1000);
     }
 
-    // Reset the scale to 0
     scale.tare();
-
-    Serial.println("Setup complete. Camera ready!");
-    Serial.println("Commands:");
-    Serial.println("- Type 'capture' to take a photo");
-    Serial.println("- Type 'stream' to start streaming mode");
-    Serial.println("- Type 'res320' for 320x240 resolution");
-    Serial.println("- Type 'res640' for 640x480 resolution");
-    Serial.println("- Type 'res1024' for 1024x768 resolution");
-    Serial.println("- Type 'res1280' for 1280x960 resolution");
-    Serial.println("- Type 'res1600' for 1600x1200 resolution");
-    Serial.println("- Type 'res2048' for 2048x1536 resolution");
-    Serial.println("- Type 'res2592' for 2592x1944 resolution (5MP)");
+    scale.set_scale(403.f);
+    Serial.println("The scale initialized.");
 }
 
-void loop()
+void setupWiFi()
 {
-    // Handle web server requests
-    server.handleClient();
+    WiFi.begin(ssid, password);
+    Serial.print("Connecting to WiFi");
 
-    // Handle serial commands
-    if (Serial.available())
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 20)
     {
-        String command = Serial.readStringUntil('\n');
-        command.trim();
-
-        if (command == "capture")
-        {
-            captureImage();
-        }
-        else if (command == "stream")
-        {
-            streamImages();
-        }
-        else if (command == "res320")
-        {
-            myCAM.OV5642_set_JPEG_size(OV5642_320x240);
-            Serial.println("Resolution set to 320x240");
-        }
-        else if (command == "res640")
-        {
-            myCAM.OV5642_set_JPEG_size(OV5642_640x480);
-            Serial.println("Resolution set to 640x480");
-        }
-        else if (command == "res1024")
-        {
-            myCAM.OV5642_set_JPEG_size(OV5642_1024x768);
-            Serial.println("Resolution set to 1024x768");
-        }
-        else if (command == "res1280")
-        {
-            myCAM.OV5642_set_JPEG_size(OV5642_1280x960);
-            Serial.println("Resolution set to 1280x960");
-        }
-        else if (command == "res1600")
-        {
-            myCAM.OV5642_set_JPEG_size(OV5642_1600x1200);
-            Serial.println("Resolution set to 1600x1200");
-        }
-        else if (command == "res2048")
-        {
-            myCAM.OV5642_set_JPEG_size(OV5642_2048x1536);
-            Serial.println("Resolution set to 2048x1536");
-        }
-        else if (command == "res2592")
-        {
-            myCAM.OV5642_set_JPEG_size(OV5642_2592x1944);
-            Serial.println("Resolution set to 2592x1944 (5MP)");
-        }
+        delay(500);
+        Serial.print(".");
+        attempts++;
     }
 
-    // Serial.println("scale.read() = " + String(scale.read()));
-    // Serial.println("scale.get_units() = " + String(scale.get_units()));
-    //  if weight is heavier than 100 grams, capture an image and upload to
-    //  server.
-
-    float         currentWeight = scale.get_units();
-    unsigned long currentTime   = millis();
-
-    // Check if weight exceeds threshold and debounce to prevent multiple
-    // uploads
-    if (currentWeight > 100 && !weightDetected &&
-        (currentTime - lastWeightCheck > WEIGHT_DEBOUNCE_TIME))
+    if (WiFi.status() == WL_CONNECTED)
     {
-        Serial.println("Weight exceeded threshold: " + String(currentWeight) +
-                       "g, capturing image...");
-
-        // Capture the image and send it to the server hosted on
-        // HTTP://192.168.2.123:3000/api/analyze-food Using MIME Multipart Media
-        // Encapsulation There are two parts of the content:
-        // 1. The image data, in JPEG format, the name is "foodImage" and the
-        // value is the image data.
-        // 2. The scale data, in text, the name is "weight" and the value is the
-        // weight in grams.
-
-        if (captureAndUploadImage(currentWeight))
-        {
-            weightDetected  = true;
-            lastWeightCheck = currentTime;
-            Serial.println("Image uploaded successfully!");
-        }
-        else
-        {
-            Serial.println("Failed to upload image");
-            lastWeightCheck = currentTime; // Still update to prevent spam
-        }
+        Serial.println();
+        Serial.print("WiFi connected! IP address: ");
+        Serial.println(WiFi.localIP());
     }
-
-    // Reset weight detection when weight drops below threshold
-    if (currentWeight < 50 && weightDetected)
+    else
     {
-        Serial.println("Weight removed, ready for next detection");
-        weightDetected = false;
-    }
+        Serial.println("\nWiFi connection failed.");
 
-    delay(500);
+        // Halt execution on error
+        while (1)
+            ;
+    }
 }
+
+void setupWebServer()
+{
+    if (WiFi.status() != WL_CONNECTED)
+        return;
+
+    server.on("/", handleRoot);
+    server.on("/capture", handleCapture);
+    server.on("/status", handleStatus);
+    server.begin();
+    Serial.println("Web server started");
+}
+
+// ***************************************************************************
+// Helper functions
 
 void captureImage()
 {
@@ -330,47 +257,6 @@ void streamImages()
     }
 
     Serial.println("Stream stopped.");
-}
-
-void setupWiFi()
-{
-    WiFi.begin(ssid, password);
-    Serial.print("Connecting to WiFi");
-
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 20)
-    {
-        delay(500);
-        Serial.print(".");
-        attempts++;
-    }
-
-    if (WiFi.status() == WL_CONNECTED)
-    {
-        Serial.println();
-        Serial.print("WiFi connected! IP address: ");
-        Serial.println(WiFi.localIP());
-    }
-    else
-    {
-        Serial.println("\nWiFi connection failed. Continuing without WiFi.");
-
-        // Halt execution on error
-        while (1)
-            ;
-    }
-}
-
-void setupWebServer()
-{
-    if (WiFi.status() != WL_CONNECTED)
-        return;
-
-    server.on("/", handleRoot);
-    server.on("/capture", handleCapture);
-    server.on("/status", handleStatus);
-    server.begin();
-    Serial.println("Web server started");
 }
 
 void handleRoot()
@@ -688,4 +574,138 @@ bool captureAndUploadImage(float weight)
     }
 
     return false;
+}
+
+// ***************************************************************************
+// Arduino main functions
+
+void setup()
+{
+    // ESP32 will have a window of 1 second after boot where serial is
+    // unavailable.
+    delay(2000);
+    Serial.begin(115200);
+    Serial.println("**************************************************");
+    Serial.println("System Initializing...");
+
+    setupCamera();
+    setupWiFi();
+    setupWebServer();
+    setupScale();
+
+    Serial.println("System Initialized successfully.");
+
+    Serial.println("Commands:");
+    Serial.println("- Type 'capture' to take a photo");
+    Serial.println("- Type 'stream' to start streaming mode");
+    Serial.println("- Type 'res320' for 320x240 resolution");
+    Serial.println("- Type 'res640' for 640x480 resolution");
+    Serial.println("- Type 'res1024' for 1024x768 resolution");
+    Serial.println("- Type 'res1280' for 1280x960 resolution");
+    Serial.println("- Type 'res1600' for 1600x1200 resolution");
+    Serial.println("- Type 'res2048' for 2048x1536 resolution");
+    Serial.println("- Type 'res2592' for 2592x1944 resolution (5MP)");
+}
+
+void loop()
+{
+    // Handle web server requests
+    server.handleClient();
+
+    // Handle serial commands
+    if (Serial.available())
+    {
+        String command = Serial.readStringUntil('\n');
+        command.trim();
+
+        if (command == "capture")
+        {
+            captureImage();
+        }
+        else if (command == "stream")
+        {
+            streamImages();
+        }
+        else if (command == "res320")
+        {
+            myCAM.OV5642_set_JPEG_size(OV5642_320x240);
+            Serial.println("Resolution set to 320x240");
+        }
+        else if (command == "res640")
+        {
+            myCAM.OV5642_set_JPEG_size(OV5642_640x480);
+            Serial.println("Resolution set to 640x480");
+        }
+        else if (command == "res1024")
+        {
+            myCAM.OV5642_set_JPEG_size(OV5642_1024x768);
+            Serial.println("Resolution set to 1024x768");
+        }
+        else if (command == "res1280")
+        {
+            myCAM.OV5642_set_JPEG_size(OV5642_1280x960);
+            Serial.println("Resolution set to 1280x960");
+        }
+        else if (command == "res1600")
+        {
+            myCAM.OV5642_set_JPEG_size(OV5642_1600x1200);
+            Serial.println("Resolution set to 1600x1200");
+        }
+        else if (command == "res2048")
+        {
+            myCAM.OV5642_set_JPEG_size(OV5642_2048x1536);
+            Serial.println("Resolution set to 2048x1536");
+        }
+        else if (command == "res2592")
+        {
+            myCAM.OV5642_set_JPEG_size(OV5642_2592x1944);
+            Serial.println("Resolution set to 2592x1944 (5MP)");
+        }
+    }
+
+    // Serial.println("scale.read() = " + String(scale.read()));
+    // Serial.println("scale.get_units() = " + String(scale.get_units()));
+    //  if weight is heavier than 100 grams, capture an image and upload to
+    //  server.
+
+    float         currentWeight = scale.get_units();
+    unsigned long currentTime   = millis();
+
+    // Check if weight exceeds threshold and debounce to prevent multiple
+    // uploads
+    if (currentWeight > 100 && !weightDetected &&
+        (currentTime - lastWeightCheck > WEIGHT_DEBOUNCE_TIME))
+    {
+        Serial.println("Weight exceeded threshold: " + String(currentWeight) +
+                       "g, capturing image...");
+
+        // Capture the image and send it to the server hosted on
+        // HTTP://192.168.2.123:3000/api/analyze-food Using MIME Multipart Media
+        // Encapsulation There are two parts of the content:
+        // 1. The image data, in JPEG format, the name is "foodImage" and the
+        // value is the image data.
+        // 2. The scale data, in text, the name is "weight" and the value is the
+        // weight in grams.
+
+        if (captureAndUploadImage(currentWeight))
+        {
+            weightDetected  = true;
+            lastWeightCheck = currentTime;
+            Serial.println("Image uploaded successfully!");
+        }
+        else
+        {
+            Serial.println("Failed to upload image");
+            lastWeightCheck = currentTime; // Still update to prevent spam
+        }
+    }
+
+    // Reset weight detection when weight drops below threshold
+    if (currentWeight < 50 && weightDetected)
+    {
+        Serial.println("Weight removed, ready for next detection");
+        weightDetected = false;
+    }
+
+    delay(500);
 }
