@@ -14,7 +14,7 @@ let latestUpload = null;
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
+    fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
 // Middleware
@@ -26,23 +26,23 @@ app.use('/uploads', express.static(uploadsDir));
 
 // Multer config (same field name as main server: 'foodImage')
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadsDir),
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-  },
+    destination: (req, file, cb) => cb(null, uploadsDir),
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    },
 });
 
 const fileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith('image/')) cb(null, true);
-  else cb(new Error('Only image files are allowed!'), false);
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Only image files are allowed!'), false);
 };
 
 const upload = multer({ storage, fileFilter, limits: { fileSize: 5 * 1024 * 1024 } });
 
 // Minimal index page showing the latest uploaded image
 app.get('/', (req, res) => {
-  const html = `<!doctype html>
+    const html = `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
@@ -72,39 +72,39 @@ app.get('/', (req, res) => {
     </div>
   </body>
   </html>`;
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.send(html);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
 });
 
 // Single API endpoint: accept image, ignore analysis, and expose it on the index page
 app.post('/api/analyze-food', upload.single('foodImage'), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ success: false, error: 'No image file uploaded' });
+    try {
+        if (!req.file) return res.status(400).json({ success: false, error: 'No image file uploaded' });
 
-    latestUpload = {
-      filename: req.file.filename,
-      originalName: req.file.originalname,
-      size: req.file.size,
-      url: `/uploads/${req.file.filename}`,
-      timestamp: new Date().toISOString(),
-    };
+        latestUpload = {
+            filename: req.file.filename,
+            originalName: req.file.originalname,
+            size: req.file.size,
+            url: `/uploads/${req.file.filename}`,
+            timestamp: new Date().toISOString(),
+        };
 
-    res.json({ success: true, image: latestUpload });
-  } catch (e) {
-    console.error('Upload error:', e.message);
-    res.status(500).json({ success: false, error: 'Internal error' });
-  }
+        res.json({ success: true, image: latestUpload });
+    } catch (e) {
+        console.error('Upload error:', e.message);
+        res.status(500).json({ success: false, error: 'Internal error' });
+    }
 });
 
 // Basic health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+    res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
 // 404 JSON
 app.use('*', (req, res) => res.status(404).json({ error: 'Route not found' }));
 
 app.listen(PORT, () => {
-  console.log(`🖼️  Simple Upload Server running on http://localhost:${PORT}`);
-  console.log(`📁 Uploads directory: ${uploadsDir}`);
+    console.log(`🖼️  Simple Upload Server running on http://localhost:${PORT}`);
+    console.log(`📁 Uploads directory: ${uploadsDir}`);
 });
