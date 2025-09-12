@@ -438,7 +438,7 @@ bool captureAndUploadImage(float weight)
     WiFiClient client;
 
     // Parse server URL (assuming http://192.168.2.123:3000/api/analyze-food)
-    const char* host = "192.168.2.123";
+    const char* host = "192.168.2.115";
     const int   port = 3000;
     const char* path = "/api/analyze-food";
 

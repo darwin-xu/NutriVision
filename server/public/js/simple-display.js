@@ -131,12 +131,12 @@ function displayResults(data) {
         'Last: ' + new Date(data.timestamp).toLocaleString()
     );
 
-    // Hide results after 30 seconds
-    setTimeout(function () {
-        resultsDiv.style.display = 'none';
-        updateStatus('Ready for Next Analysis', 'Waiting...');
-        log('Results hidden after 30 seconds');
-    }, 30000);
+    // // Hide results after 30 seconds
+    // setTimeout(function () {
+    //     resultsDiv.style.display = 'none';
+    //     updateStatus('Ready for Next Analysis', 'Waiting...');
+    //     log('Results hidden after 30 seconds');
+    // }, 30000);
 }
 
 // Start the system

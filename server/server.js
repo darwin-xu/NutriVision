@@ -9,6 +9,11 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const LLM_ENDPOINT =
+    process.env.LLM_ENDPOINT || 'http://127.0.0.1:1234/v1/chat/completions';
+const LLM_MODEL = process.env.LLM_MODEL || 'gemma-3-27b-it';
+const LLM_TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS || 120000);
+const LLM_MAX_TOKENS = Number(process.env.LLM_MAX_TOKENS || 512);
 
 // Store the latest analysis result in memory (in production, use a database)
 let latestAnalysis = null;
@@ -69,6 +74,116 @@ const upload = multer({
     },
 });
 
+function getMimeTypeByExt(ext) {
+    const e = ext.toLowerCase();
+    if (e === '.jpg' || e === '.jpeg') return 'image/jpeg';
+    if (e === '.png') return 'image/png';
+    if (e === '.gif') return 'image/gif';
+    if (e === '.svg') return 'image/svg+xml';
+    if (e === '.webp') return 'image/webp';
+    return 'image/jpeg';
+}
+
+async function analyzeWithLLM(imageFsPath, weight) {
+    const imageBuffer = fs.readFileSync(imageFsPath);
+    const base64 = imageBuffer.toString('base64');
+    const mime = getMimeTypeByExt(path.extname(imageFsPath || ''));
+
+    const userText = `You are a nutrition analysis assistant.
+Given an image of food and a weight of ${weight} grams, identify the primary food item in the image and output nutrition for the given weight.
+
+Return ONLY valid JSON in the following schema (no extra commentary):
+{
+  "foodType": string,
+  "confidence": number, // 0..1
+  "nutrition": {
+    "calories": number, // kcal for the provided weight
+    "protein": number,  // grams for the provided weight
+    "carbs": number,    // grams for the provided weight
+    "fat": number,      // grams for the provided weight
+    "fiber": number     // grams for the provided weight (if unknown, estimate or use 0)
+  },
+  "healthSuggestions": string[] // 2-4 short bullet-like suggestions
+}`;
+
+    const payload = {
+        model: LLM_MODEL,
+        messages: [
+            {
+                role: 'user',
+                content: [
+                    { type: 'text', text: userText },
+                    {
+                        type: 'image_url',
+                        image_url: { url: `data:${mime};base64,${base64}` },
+                    },
+                ],
+            },
+        ],
+        temperature: 0.2,
+        max_tokens: LLM_MAX_TOKENS,
+        stream: false,
+    };
+
+    const axios = require('axios');
+    const started = Date.now();
+    const { data, headers } = await axios.post(LLM_ENDPOINT, payload, {
+        timeout: LLM_TIMEOUT_MS,
+        timeoutErrorMessage: `LLM request timed out after ${LLM_TIMEOUT_MS}ms`,
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        // In case of larger base64 images
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+        validateStatus: s => s >= 200 && s < 300,
+    });
+    const elapsed = Date.now() - started;
+    if (headers && headers['content-type'] && headers['content-type'].includes('text/event-stream')) {
+        console.warn('LLM responded with text/event-stream; ensure non-streaming mode is supported.');
+    }
+    console.log(`LLM call completed in ${elapsed}ms`);
+    const raw = data?.choices?.[0]?.message?.content || '';
+
+    // Extract JSON from response (handles fenced code blocks)
+    let text = String(raw).trim();
+    const fenceIdx = text.indexOf('```');
+    if (fenceIdx !== -1) {
+        const match = text.match(/```(?:json)?\n([\s\S]*?)```/i);
+        if (match && match[1]) {
+            text = match[1].trim();
+        }
+    }
+
+    let parsed;
+    try {
+        parsed = JSON.parse(text);
+    } catch (e) {
+        throw new Error('LLM returned non-JSON or unparsable output');
+    }
+
+    // Basic normalization
+    const suggestions = Array.isArray(parsed.healthSuggestions)
+        ? parsed.healthSuggestions
+        : [];
+
+    const analysis = {
+        foodType: String(parsed.foodType || 'Unknown'),
+        confidence: Math.max(
+            0,
+            Math.min(1, Number(parsed.confidence ?? 0.5))
+        ),
+        nutrition: {
+            calories: Math.round(Number(parsed.nutrition?.calories ?? 0)),
+            protein: Math.round(Number(parsed.nutrition?.protein ?? 0)),
+            carbs: Math.round(Number(parsed.nutrition?.carbs ?? 0)),
+            fat: Math.round(Number(parsed.nutrition?.fat ?? 0)),
+            fiber: Math.round(Number(parsed.nutrition?.fiber ?? 0)),
+        },
+        healthSuggestions: suggestions.slice(0, 4).map(s => String(s)),
+    };
+
+    return analysis;
+}
+
 // Routes
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -87,25 +202,27 @@ app.post('/api/analyze-food', upload.single('foodImage'), async (req, res) => {
             return res.status(400).json({ error: 'Valid weight is required' });
         }
 
-        // TODO: Implement actual food recognition and nutrition analysis
-        // For now, we'll return mock data
-        const mockAnalysis = {
-            foodType: 'Apple',
-            confidence: 0.85,
-            nutrition: {
-                calories: Math.round((52 * weight) / 100), // calories per 100g for apple
-                protein: Math.round((0.3 * weight) / 100),
-                carbs: Math.round((14 * weight) / 100),
-                fat: Math.round((0.2 * weight) / 100),
-                fiber: Math.round((2.4 * weight) / 100),
-            },
-            healthSuggestions: [
-                'Apples are rich in fiber and vitamin C',
-                'Great for maintaining healthy blood sugar levels',
-                'The fiber content helps with digestive health',
-                'Consider pairing with protein for a balanced snack',
-            ],
-        };
+        let llmAnalysis;
+        try {
+            const filePathOnDisk = path.join(__dirname, req.file.path || '');
+            llmAnalysis = await analyzeWithLLM(filePathOnDisk, weight);
+        } catch (e) {
+            console.error('LLM analysis failed, falling back to mock:', e.message);
+            llmAnalysis = {
+                foodType: 'Unknown',
+                confidence: 0.5,
+                nutrition: {
+                    calories: Math.round((100 * weight) / 100),
+                    protein: 0,
+                    carbs: 0,
+                    fat: 0,
+                    fiber: 0,
+                },
+                healthSuggestions: [
+                    'Unable to get detailed analysis; showing fallback values',
+                ],
+            };
+        }
 
         const analysisResult = {
             id: Date.now(), // Simple ID for tracking new results
@@ -116,7 +233,7 @@ app.post('/api/analyze-food', upload.single('foodImage'), async (req, res) => {
                 path: `/uploads/${req.file.filename}`,
             },
             weight: parseFloat(weight),
-            analysis: mockAnalysis,
+            analysis: llmAnalysis,
             timestamp: new Date().toISOString(),
         };
 

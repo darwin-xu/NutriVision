@@ -59,6 +59,50 @@ A Node.js web server for automated food image recognition and nutrition analysis
 
 5. Open your browser and visit: `http://localhost:3000`
 
+## Local LLM Integration
+
+The server can delegate nutrition analysis to a local LLM that supports the OpenAI-compatible Chat Completions API with image input (e.g., endpoint `http://127.0.0.1:1234/v1/chat/completions`).
+
+- Env vars (optional):
+    - `LLM_ENDPOINT` (default: `http://127.0.0.1:1234/v1/chat/completions`)
+    - `LLM_MODEL` (default: `gemma-3-27b-it`)
+    - `LLM_TIMEOUT_MS` (default: `120000`)
+    - `LLM_MAX_TOKENS` (default: `512`)
+
+Steps:
+
+```bash
+# Ensure your local LLM server is running
+# Example target: http://127.0.0.1:1234/v1/chat/completions
+
+# Start the API server (in another terminal)
+cd server
+npm run dev
+
+# Optionally set env vars
+export LLM_ENDPOINT=http://127.0.0.1:1234/v1/chat/completions
+export LLM_MODEL=gemma-3-27b-it
+export LLM_TIMEOUT_MS=120000
+export LLM_MAX_TOKENS=512
+```
+
+Test with curl (replace path to an image):
+
+```bash
+curl -X POST http://localhost:3000/api/analyze-food \
+    -F "foodImage=@./sample-images/sandwich.jpg" \
+    -F "weight=180"
+```
+
+If the LLM call fails or is unreachable, the server falls back to a minimal placeholder analysis so the API still responds.
+
+### Troubleshooting LLM timeouts
+
+- Ensure your LLM server supports non-streaming Chat Completions and responds with JSON.
+- Increase timeout via `LLM_TIMEOUT_MS` for slow models/hardware.
+- Large images can make payloads big; the server allows large bodies, but slower backends may need more time.
+- Verify the LLM logs show the request finishing before the timeout and that it isn’t streaming SSE (`text/event-stream`).
+
 ## Equipment Simulation
 
 To test the system without physical equipment, use the included simulator:
