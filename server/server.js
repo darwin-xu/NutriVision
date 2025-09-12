@@ -5,6 +5,9 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+const BonjourModule = require('bonjour-service');
+const BonjourCtor = BonjourModule && BonjourModule.default ? BonjourModule.default : BonjourModule;
 require('dotenv').config();
 
 const app = express();
@@ -14,6 +17,8 @@ const LLM_ENDPOINT =
 const LLM_MODEL = process.env.LLM_MODEL || 'gemma-3-27b-it';
 const LLM_TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS || 120000);
 const LLM_MAX_TOKENS = Number(process.env.LLM_MAX_TOKENS || 512);
+const SERVICE_NAME = process.env.SERVICE_NAME || 'NutriVision';
+const MDNS_DISABLE = String(process.env.MDNS_DISABLE || '').toLowerCase() === 'true';
 
 // Store the latest analysis result in memory (in production, use a database)
 let latestAnalysis = null;
@@ -293,7 +298,74 @@ app.use('*', (req, res) => {
     res.status(404).json({ error: 'Route not found' });
 });
 
-app.listen(PORT, () => {
+function getLocalIPv4() {
+    const ifaces = os.networkInterfaces();
+    for (const name of Object.keys(ifaces)) {
+        for (const iface of ifaces[name] || []) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+                return iface.address;
+            }
+        }
+    }
+    return null;
+}
+
+let bonjour;
+let publishedServices = [];
+
+function startMdns(port) {
+    if (MDNS_DISABLE) {
+        console.log('🔕 mDNS/Bonjour broadcasting is disabled (MDNS_DISABLE=true)');
+        return;
+    }
+    try {
+        bonjour = new BonjourCtor();
+        const txt = { path: '/', api: '/api/analyze-food', ver: '1' };
+
+        const httpSvc = bonjour.publish({ name: `${SERVICE_NAME}`, type: 'http', port, txt });
+        if (httpSvc.start) httpSvc.start();
+        publishedServices.push(httpSvc);
+
+        const customSvc = bonjour.publish({ name: `${SERVICE_NAME}`, type: 'nutrivision', protocol: 'tcp', port, txt });
+        if (customSvc.start) customSvc.start();
+        publishedServices.push(customSvc);
+
+        console.log(`📣 Advertising mDNS: ${SERVICE_NAME}._http._tcp.local and ${SERVICE_NAME}._nutrivision._tcp.local`);
+    } catch (e) {
+        console.warn('⚠️  Failed to start mDNS/Bonjour advertisement:', e.message);
+    }
+}
+
+function stopMdns() {
+    try {
+        for (const s of publishedServices) {
+            if (s && s.stop) s.stop();
+            if (s && s.unpublish) s.unpublish();
+        }
+        publishedServices = [];
+        if (bonjour) {
+            if (bonjour.unpublishAll) bonjour.unpublishAll(() => bonjour.destroy());
+            else if (bonjour.destroy) bonjour.destroy();
+            bonjour = null;
+        }
+    } catch (e) {
+        // ignore
+    }
+}
+
+const server = app.listen(PORT, () => {
+    const ip = getLocalIPv4();
     console.log(`🍎 Food Analysis Server running on http://localhost:${PORT}`);
-    console.log(`📁 Uploads directory: ${uploadsDir}`);
+    if (ip) console.log(`� LAN URL: http://${ip}:${PORT}`);
+    console.log(`�📁 Uploads directory: ${uploadsDir}`);
+    startMdns(PORT);
+});
+
+['SIGINT', 'SIGTERM'].forEach(sig => {
+    process.on(sig, () => {
+        stopMdns();
+        server.close(() => process.exit(0));
+        // Force exit if not closed within 2s
+        setTimeout(() => process.exit(0), 2000).unref();
+    });
 });

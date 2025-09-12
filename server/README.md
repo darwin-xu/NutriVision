@@ -58,6 +58,7 @@ A Node.js web server for automated food image recognition and nutrition analysis
     ```
 
 5. Open your browser and visit: `http://localhost:3000`
+    - The server also logs a LAN URL (e.g., `http://192.168.1.10:3000`) so other devices on your network can access it.
 
 ## Local LLM Integration
 
@@ -126,6 +127,25 @@ To test the system without physical equipment, use the included simulator:
     ```
 
 For detailed simulator documentation, see [EQUIPMENT-SIMULATOR.md](EQUIPMENT-SIMULATOR.md)
+
+## Broadcast on Local Network (mDNS/Bonjour)
+
+The server announces itself on your LAN via mDNS/Bonjour so clients can discover it without knowing the IP.
+
+- Services advertised:
+    - `_http._tcp` with name `${SERVICE_NAME}` (default: `NutriVision`)
+    - `._nutrivision._tcp` with basic TXT records (path, api, ver)
+
+- Env vars:
+    - `SERVICE_NAME` (default: `NutriVision`)
+    - `MDNS_DISABLE=true` to turn off broadcasting
+
+On macOS/iOS, you can find it via Bonjour browsers or using:
+
+```bash
+dns-sd -B _http._tcp
+dns-sd -B _nutrivision._tcp
+```
 
 ## Scripts
 
@@ -261,3 +281,24 @@ Get the most recent food analysis result. Used by the web interface to display r
 ## License
 
 ISC License
+
+## Simple Upload-Only Server (for device testing)
+
+Use this minimal server when you only need to verify the device can upload an image. It exposes only `POST /api/analyze-food` and displays the latest image on a simple web page.
+
+Run it:
+
+```bash
+cd server
+npm run simple
+# Serves on http://localhost:3100 by default
+```
+
+Send an image:
+
+```bash
+curl -X POST http://localhost:3100/api/analyze-food \
+  -F "foodImage=@./sample-images/sandwich.jpg"
+```
+
+Open http://localhost:3100 to see the image (page auto-refreshes every 3 seconds).
