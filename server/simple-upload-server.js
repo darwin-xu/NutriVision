@@ -62,7 +62,8 @@ app.get('/', (req, res) => {
     <div class="wrap">
       <h1>Latest Uploaded Image</h1>
       ${latestUpload ? `
-        <div class="meta">Filename: <code>${latestUpload.filename}</code> • Size: ${latestUpload.size} bytes • Time: ${latestUpload.timestamp}</div>
+        <div class="meta">Filename: <code>${latestUpload.filename}</code> • Size: ${latestUpload.size} bytes • Time: ${latestUpload.timestamp}${typeof latestUpload.weight === 'number' ? ` • Weight: ${latestUpload.weight} g` : ''
+            }</div>
         <img src="${latestUpload.url}" alt="Latest upload" />
       ` : `
         <p class="empty">No image uploaded yet. POST to <code>/api/analyze-food</code> with field <code>foodImage</code>.</p>
@@ -81,12 +82,19 @@ app.post('/api/analyze-food', upload.single('foodImage'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, error: 'No image file uploaded' });
 
+        let weight = undefined;
+        if (req.body && req.body.weight !== undefined) {
+            const w = parseFloat(req.body.weight);
+            if (!Number.isNaN(w) && Number.isFinite(w) && w > 0) weight = Math.round(w);
+        }
+
         latestUpload = {
             filename: req.file.filename,
             originalName: req.file.originalname,
             size: req.file.size,
             url: `/uploads/${req.file.filename}`,
             timestamp: new Date().toISOString(),
+            weight,
         };
 
         res.json({ success: true, image: latestUpload });
