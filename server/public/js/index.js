@@ -1,6 +1,7 @@
 // Poll for new analysis results
 let pollInterval;
 let lastAnalysisId = null;
+let lastAnalysisTimestamp = null;
 
 function startPolling() {
     console.log('🔄 Starting to poll for new analysis results...');
@@ -23,19 +24,15 @@ async function checkForNewData() {
                     'last ID:',
                     lastAnalysisId
                 );
-                if (result.data.id !== lastAnalysisId) {
-                    console.log(
-                        '📊 New analysis result received:',
-                        result.data.id
-                    );
+                const isNew = result.data.id !== lastAnalysisId;
+                const isUpdated =
+                    !!result.data.timestamp &&
+                    result.data.timestamp !== lastAnalysisTimestamp;
+                if (isNew || isUpdated) {
                     console.log('🖼️ Image path:', result.data.image.path);
                     lastAnalysisId = result.data.id;
-                    showLoading();
-
-                    // Show loading for 2 seconds, then display results
-                    setTimeout(function () {
-                        displayResults(result.data);
-                    }, 2000);
+                    lastAnalysisTimestamp = result.data.timestamp || null;
+                    displayResults(result.data);
                 } else {
                     console.log('⏸️ Same analysis ID, no update needed');
                 }
@@ -66,27 +63,25 @@ function updateStatus(statusText, lastUpdateText) {
     }
 }
 
-function showLoading() {
-    console.log('⏳ Showing loading animation...');
-    updateStatus('Processing Food Analysis...', 'Analysis in progress...');
-    document.getElementById('loadingSection').style.display = 'block';
-    document.getElementById('resultsSection').style.display = 'none';
-}
-
-function hideLoading() {
-    document.getElementById('loadingSection').style.display = 'none';
-}
+function showLoading() {}
+function hideLoading() {}
 
 function displayResults(data) {
     console.log('📋 Displaying analysis results:', data);
     console.log('🖼️ Image data:', data.image);
     console.log('📂 Full image path:', data.image.path);
 
-    hideLoading();
-    updateStatus(
-        'Analysis Complete',
-        'Last analysis: ' + new Date(data.timestamp).toLocaleString()
-    );
+    const processing =
+        data.status === 'processing' ||
+        (data.analysis && data.analysis.foodType === 'Processing');
+    if (processing) {
+        updateStatus('Analyzing...', 'Started: ' + new Date(data.timestamp).toLocaleString());
+    } else {
+        updateStatus(
+            'Analysis Complete',
+            'Last analysis: ' + new Date(data.timestamp).toLocaleString()
+        );
+    }
 
     const resultsSection = document.getElementById('resultsSection');
     const { analysis, weight, image, timestamp } = data;
@@ -95,71 +90,63 @@ function displayResults(data) {
                             onload="console.log('✅ Image loaded successfully: ${image.path}')" 
                             onerror="console.error('❌ Image failed to load: ${image.path}')" />`;
 
-    resultsSection.innerHTML = `
-      <h2>🔍 Food Analysis Results</h2>
-      
-      <div style="margin: 20px 0;">
-        ${imageHtml}
-      </div>
-      
-      <div style="margin-bottom: 20px;">
-        <h3>📊 Food Identification</h3>
-        <p><strong>Food Type:</strong> ${analysis.foodType}</p>
-        <p><strong>Confidence:</strong> ${(analysis.confidence * 100).toFixed(1)}%</p>
-        <p><strong>Weight:</strong> ${weight}g</p>
-        <p><strong>Image:</strong> ${image.originalName}</p>
-        <p><strong>Image Path:</strong> <a href="${image.path}" target="_blank">${image.path}</a></p>
-      </div>
-      
-      <h3>🥗 Nutritional Information (per ${weight}g)</h3>
-      <div class="nutrition-grid">
-        <div class="nutrition-item">
-          <div class="value">${analysis.nutrition.calories}</div>
-          <div class="label">Calories</div>
-        </div>
-        <div class="nutrition-item">
-          <div class="value">${analysis.nutrition.protein}g</div>
-          <div class="label">Protein</div>
-        </div>
-        <div class="nutrition-item">
-          <div class="value">${analysis.nutrition.carbs}g</div>
-          <div class="label">Carbs</div>
-        </div>
-        <div class="nutrition-item">
-          <div class="value">${analysis.nutrition.fat}g</div>
-          <div class="label">Fat</div>
-        </div>
-        <div class="nutrition-item">
-          <div class="value">${analysis.nutrition.fiber}g</div>
-          <div class="label">Fiber</div>
-        </div>
-      </div>
-      
-      <div class="suggestions">
-        <h3>💡 Health Suggestions</h3>
-        <ul>
-          ${analysis.healthSuggestions.map(suggestion => `<li>${suggestion}</li>`).join('')}
-        </ul>
-      </div>
-    `;
+        let html = `
+            <h2>🔍 Food Analysis Results</h2>
+            <div style="margin: 20px 0;">${imageHtml}</div>
+            <div style="margin-bottom: 20px;">
+                <h3>📊 Food Identification</h3>
+                <p><strong>Weight:</strong> ${weight}g</p>
+                <p><strong>Image:</strong> ${image.originalName}</p>
+                <p><strong>Image Path:</strong> <a href="${image.path}" target="_blank">${image.path}</a></p>`;
+
+        if (processing) {
+                html += `
+                <p><strong>Status:</strong> Analyzing...</p>
+                <p><strong>Food Type:</strong> Processing</p>`;
+        } else {
+                html += `
+                <p><strong>Food Type:</strong> ${analysis.foodType}</p>
+                <p><strong>Confidence:</strong> ${(analysis.confidence * 100).toFixed(1)}%</p>
+                <h3>🥗 Nutritional Information (per ${weight}g)</h3>
+                <div class="nutrition-grid">
+                    <div class="nutrition-item">
+                        <div class="value">${analysis.nutrition.calories}</div>
+                        <div class="label">Calories</div>
+                    </div>
+                    <div class="nutrition-item">
+                        <div class="value">${analysis.nutrition.protein}g</div>
+                        <div class="label">Protein</div>
+                    </div>
+                    <div class="nutrition-item">
+                        <div class="value">${analysis.nutrition.carbs}g</div>
+                        <div class="label">Carbs</div>
+                    </div>
+                    <div class="nutrition-item">
+                        <div class="value">${analysis.nutrition.fat}g</div>
+                        <div class="label">Fat</div>
+                    </div>
+                    <div class="nutrition-item">
+                        <div class="value">${analysis.nutrition.fiber}g</div>
+                        <div class="label">Fiber</div>
+                    </div>
+                </div>
+                <div class="suggestions">
+                    <h3>💡 Health Suggestions</h3>
+                    <ul>
+                        ${analysis.healthSuggestions.map(suggestion => `<li>${suggestion}</li>`).join('')}
+                    </ul>
+                </div>`;
+        }
+
+        html += `</div>`;
+
+        resultsSection.innerHTML = html;
 
     console.log('🎯 Results section updated, making visible...');
     resultsSection.style.display = 'block';
 
-    // Hide results after 30 seconds and resume normal polling
-    setTimeout(() => {
-        console.log('⏰ Hiding results after 30 seconds...');
-        hideResults();
-        updateStatus(
-            'System Ready - Waiting for Equipment',
-            'Ready for next analysis'
-        );
-    }, 30000);
 }
 
-function hideResults() {
-    document.getElementById('resultsSection').style.display = 'none';
-}
 
 // Initialize the system
 document.addEventListener('DOMContentLoaded', function () {

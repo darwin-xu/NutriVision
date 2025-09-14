@@ -198,60 +198,75 @@ app.get('/', (req, res) => {
 app.post('/api/analyze-food', upload.single('foodImage'), async (req, res) => {
     try {
         if (!req.file) {
-            return res.status(400).json({ error: 'No image file uploaded' });
+            return res.status(400).json({ success: false, error: 'No image file uploaded' });
         }
 
         const { weight } = req.body;
-
         if (!weight || isNaN(weight) || weight <= 0) {
-            return res.status(400).json({ error: 'Valid weight is required' });
+            return res.status(400).json({ success: false, error: 'Valid weight is required' });
         }
 
-        let llmAnalysis;
-        try {
-            const filePathOnDisk = path.join(__dirname, req.file.path || '');
-            llmAnalysis = await analyzeWithLLM(filePathOnDisk, weight);
-        } catch (e) {
-            console.error('LLM analysis failed, falling back to mock:', e.message);
-            llmAnalysis = {
-                foodType: 'Unknown',
-                confidence: 0.5,
-                nutrition: {
-                    calories: Math.round((100 * weight) / 100),
-                    protein: 0,
-                    carbs: 0,
-                    fat: 0,
-                    fiber: 0,
-                },
-                healthSuggestions: [
-                    'Unable to get detailed analysis; showing fallback values',
-                ],
-            };
-        }
-
-        const analysisResult = {
-            id: Date.now(), // Simple ID for tracking new results
-            image: {
-                filename: req.file.filename,
-                originalName: req.file.originalname,
-                size: req.file.size,
-                path: `/uploads/${req.file.filename}`,
-            },
-            weight: parseFloat(weight),
-            analysis: llmAnalysis,
-            timestamp: new Date().toISOString(),
+        const uploadId = Date.now();
+        const imageMeta = {
+            filename: req.file.filename,
+            originalName: req.file.originalname,
+            size: req.file.size,
+            path: `/uploads/${req.file.filename}`,
         };
 
-        // Store as latest analysis
-        latestAnalysis = analysisResult;
+        // Create processing placeholder and store as latest so UI can show immediately
+        const processing = {
+            id: uploadId,
+            image: imageMeta,
+            weight: parseFloat(weight),
+            analysis: {
+                foodType: 'Processing',
+                confidence: 0,
+                nutrition: { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 },
+                healthSuggestions: ['Analyzing...'],
+            },
+            status: 'processing',
+            timestamp: new Date().toISOString(),
+        };
+        latestAnalysis = processing;
 
-        res.json({
-            success: true,
-            data: analysisResult,
-        });
+        // Respond immediately with the processing record
+        res.json({ success: true, data: processing });
+
+        // Kick off LLM analysis in the background; do not await
+        const filePathOnDisk = path.join(__dirname, req.file.path || '');
+        (async () => {
+            try {
+                const llmAnalysis = await analyzeWithLLM(filePathOnDisk, weight);
+                const completed = {
+                    id: uploadId,
+                    image: imageMeta,
+                    weight: parseFloat(weight),
+                    analysis: llmAnalysis,
+                    timestamp: new Date().toISOString(),
+                };
+                latestAnalysis = completed;
+                console.log('✅ Background analysis completed for', imageMeta.filename);
+            } catch (e) {
+                console.error('❌ Background LLM analysis failed:', e.message);
+                const fallback = {
+                    id: uploadId,
+                    image: imageMeta,
+                    weight: parseFloat(weight),
+                    analysis: {
+                        foodType: 'Unknown',
+                        confidence: 0.5,
+                        nutrition: { calories: Math.round((100 * weight) / 100), protein: 0, carbs: 0, fat: 0, fiber: 0 },
+                        healthSuggestions: ['Unable to get detailed analysis; showing fallback values'],
+                    },
+                    timestamp: new Date().toISOString(),
+                };
+                latestAnalysis = fallback;
+            }
+        })();
     } catch (error) {
-        console.error('❌ Error during food analysis:', error.message);
-        res.status(500).json({ error: 'Internal server error' });
+        console.error('❌ Error during upload handling:', error.message);
+        res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
 
