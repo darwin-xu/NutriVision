@@ -32,7 +32,7 @@ const char* password = "opop9090";
 WebServer server(80);
 
 // Server configuration
-const char* serverURL = "http://192.168.2.123:3000/api/analyze-food";
+const char* serverURL = "http://192.168.2.125:3000/api/analyze-food";
 
 // State tracking
 bool                weightDetected       = false;
@@ -438,7 +438,7 @@ bool captureAndUploadImage(float weight)
     WiFiClient client;
 
     // Parse server URL (assuming http://192.168.2.123:3000/api/analyze-food)
-    const char* host = "192.168.2.115";
+    const char* host = "192.168.2.125";
     const int   port = 3000;
     const char* path = "/api/analyze-food";
 

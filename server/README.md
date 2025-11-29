@@ -128,25 +128,6 @@ To test the system without physical equipment, use the included simulator:
 
 For detailed simulator documentation, see [EQUIPMENT-SIMULATOR.md](EQUIPMENT-SIMULATOR.md)
 
-## Broadcast on Local Network (mDNS/Bonjour)
-
-The server announces itself on your LAN via mDNS/Bonjour so clients can discover it without knowing the IP.
-
-- Services advertised:
-    - `_http._tcp` with name `${SERVICE_NAME}` (default: `NutriVision`)
-    - `._nutrivision._tcp` with basic TXT records (path, api, ver)
-
-- Env vars:
-    - `SERVICE_NAME` (default: `NutriVision`)
-    - `MDNS_DISABLE=true` to turn off broadcasting
-
-On macOS/iOS, you can find it via Bonjour browsers or using:
-
-```bash
-dns-sd -B _http._tcp
-dns-sd -B _nutrivision._tcp
-```
-
 ## Scripts
 
 - `npm start` - Start the production server
