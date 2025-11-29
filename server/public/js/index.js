@@ -129,11 +129,23 @@ function displayResults(data) {
                         <div class="value">${analysis.nutrition.fiber}g</div>
                         <div class="label">Fiber</div>
                     </div>
+                    <div class="nutrition-item">
+                        <div class="value">${analysis.nutrition.GI}</div>
+                        <div class="label">GI</div>
+                    </div>
+                    <div class="nutrition-item">
+                        <div class="value">${analysis.nutrition.GL}</div>
+                        <div class="label">GL</div>
+                    </div>
                 </div>
                 <div class="suggestions">
                     <h3>💡 Health Suggestions</h3>
                     <ul>
                         ${analysis.healthSuggestions.map(suggestion => `<li>${suggestion}</li>`).join('')}
+                    </ul>
+                    <h3>🍽️ Dish Suggestions</h3>
+                    <ul>
+                        ${(analysis.dishSuggestions || []).map(suggestion => `<li>${suggestion}</li>`).join('')}
                     </ul>
                 </div>`;
         }

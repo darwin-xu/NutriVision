@@ -102,9 +102,12 @@ Return ONLY valid JSON in the following schema (no extra commentary):
     "protein": number,  // grams for the provided weight
     "carbs": number,    // grams for the provided weight
     "fat": number,      // grams for the provided weight
-    "fiber": number     // grams for the provided weight (if unknown, estimate or use 0)
+    "fiber": number,    // grams for the provided weight (if unknown, estimate or use 0)
+    "GI": number,       // Glycemic Index (1-100) for the food type (if unknown, estimate or use 0)
+    "GL": number,       // Glycemic Load for the provided weight (if unknown, estimate or use 0)
   },
-  "healthSuggestions": string[] // 2-4 short bullet-like suggestions
+  "healthSuggestions": string[], // 2-4 short bullet-like suggestions
+  "dishSuggestions": string[] // 1-3 short suggestions for dishes that can be made with this food item
 }`;
 
     const payload = {
@@ -166,6 +169,10 @@ Return ONLY valid JSON in the following schema (no extra commentary):
         ? parsed.healthSuggestions
         : [];
 
+    const dishSuggestions = Array.isArray(parsed.dishSuggestions)
+        ? parsed.dishSuggestions
+        : [];
+
     const analysis = {
         foodType: String(parsed.foodType || 'Unknown'),
         confidence: Math.max(
@@ -178,8 +185,11 @@ Return ONLY valid JSON in the following schema (no extra commentary):
             carbs: Math.round(Number(parsed.nutrition?.carbs ?? 0)),
             fat: Math.round(Number(parsed.nutrition?.fat ?? 0)),
             fiber: Math.round(Number(parsed.nutrition?.fiber ?? 0)),
+            GI: Math.round(Number(parsed.nutrition?.GI ?? 0)),
+            GL: Math.round(Number(parsed.nutrition?.GL ?? 0)),
         },
         healthSuggestions: suggestions.slice(0, 4).map(s => String(s)),
+        dishSuggestions: dishSuggestions.slice(0, 3).map(s => String(s)),
     };
 
     return analysis;
@@ -218,8 +228,9 @@ app.post('/api/analyze-food', upload.single('foodImage'), async (req, res) => {
             analysis: {
                 foodType: 'Processing',
                 confidence: 0,
-                nutrition: { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 },
+                nutrition: { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, GI: 0, GL: 0 },
                 healthSuggestions: ['Analyzing...'],
+                dishSuggestions: ['Analyzing...'],
             },
             status: 'processing',
             timestamp: new Date().toISOString(),
@@ -252,8 +263,9 @@ app.post('/api/analyze-food', upload.single('foodImage'), async (req, res) => {
                     analysis: {
                         foodType: 'Unknown',
                         confidence: 0.5,
-                        nutrition: { calories: Math.round((100 * weight) / 100), protein: 0, carbs: 0, fat: 0, fiber: 0 },
+                        nutrition: { calories: Math.round((100 * weight) / 100), protein: 0, carbs: 0, fat: 0, fiber: 0, GI: 0, GL: 0 },
                         healthSuggestions: ['Unable to get detailed analysis; showing fallback values'],
+                        dishSuggestions: ['No suggestion available'],
                     },
                     timestamp: new Date().toISOString(),
                 };
