@@ -1,21 +1,18 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Food Analysis & Nutrition Tracker</title>
+        <title>食物分析与营养追踪</title>
         <link rel="stylesheet" href="css/index.css" />
     </head>
     <body>
         <div class="container">
             <div class="welcome-card">
                 <div class="header">
-                    <h1>🍎 Food Analysis System v2</h1>
+                    <h1>🍎 食物分析系统 v2</h1>
                     <p>
-                        Welcome to the automated food analysis and nutrition
-                        tracking system. Our equipment will automatically
-                        capture, weigh, and analyze your food to provide
-                        detailed nutritional information and health suggestions.
+                        欢迎使用全自动食物分析与营养追踪系统。我们的设备会自动完成食物图像采集、称重与分析，为你提供详细的营养信息和健康建议。
                     </p>
                 </div>
 
@@ -23,13 +20,11 @@
                     <div>
                         <span class="status-indicator"></span>
                         <span class="status-text" id="statusText"
-                            >System Ready - Waiting for Equipment</span
+                            >系统已就绪 - 等待设备数据</span
                         >
                     </div>
                     <div class="instructions">
-                        The system is ready to receive data from the food
-                        analysis equipment. Place your food on the scale and the
-                        analysis will begin automatically.
+                        系统已准备好接收食物分析设备的数据。请将食物放在秤上，分析会自动开始。
                     </div>
                     <div class="last-update" id="lastUpdate"></div>
                 </div>
@@ -37,7 +32,7 @@
 
             <div id="loadingSection" class="loading">
                 <div class="spinner"></div>
-                <p>Analyzing food data...</p>
+                <p>正在分析食物数据...</p>
             </div>
 
             <div id="resultsSection" class="results-section">
