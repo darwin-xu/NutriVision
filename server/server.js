@@ -90,29 +90,33 @@ async function analyzeWithLLM(imageFsPath, weight) {
     const base64 = imageBuffer.toString('base64');
     const mime = getMimeTypeByExt(path.extname(imageFsPath || ''));
 
-    const userText = `You are a nutrition analysis assistant.
-Given an image of food and a weight of ${weight} grams, identify the primary food item in the image and output nutrition for the given weight.
+        const userText = `你是一名营养分析助手。
+给定一张食物图片以及 ${weight} 克的重量，请识别图片中的主要食物，并基于该重量输出营养数据。
 
-Return ONLY valid JSON in the following schema (no extra commentary):
+仅返回符合以下结构的有效 JSON（不要添加额外解释）：
 {
-  "foodType": string,
-  "confidence": number, // 0..1
-  "nutrition": {
-    "calories": number, // kcal for the provided weight
-    "protein": number,  // grams for the provided weight
-    "carbs": number,    // grams for the provided weight
-    "fat": number,      // grams for the provided weight
-    "fiber": number,    // grams for the provided weight (if unknown, estimate or use 0)
-    "GI": number,       // Glycemic Index (1-100) for the food type (if unknown, estimate or use 0)
-    "GL": number,       // Glycemic Load for the provided weight (if unknown, estimate or use 0)
-  },
-  "healthSuggestions": string[], // 2-4 short bullet-like suggestions
-  "dishSuggestions": string[] // 1-3 short suggestions for dishes that can be made with this food item
+    "foodType": string,
+    "confidence": number, // 0..1
+    "nutrition": {
+        "calories": number, // 针对此重量的千卡
+        "protein": number,  // 针对此重量的蛋白质克数
+        "carbs": number,    // 针对此重量的碳水克数
+        "fat": number,      // 针对此重量的脂肪克数
+        "fiber": number,    // 针对此重量的膳食纤维克数（未知则估算或使用 0）
+        "GI": number,       // 该食物类型的升糖指数 (1-100，未知则估算或使用 0)
+        "GL": number        // 针对此重量的升糖负荷（未知则估算或使用 0）
+    },
+    "healthSuggestions": string[], // 2-4 条简短健康建议
+    "dishSuggestions": string[] // 1-3 条适合该食物的菜品推荐
 }`;
 
     const payload = {
         model: LLM_MODEL,
         messages: [
+            {
+                role: 'system',
+                content: '你是一名营养分析助手，请用中文回答',
+            },
             {
                 role: 'user',
                 content: [

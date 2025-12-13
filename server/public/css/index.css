@@ -124,6 +124,18 @@ body {
     color: #667eea;
 }
 
+.nutrition-item .value.level-red {
+    color: #e63946;
+}
+
+.nutrition-item .value.level-yellow {
+    color: #f4a261;
+}
+
+.nutrition-item .value.level-blue {
+    color: #1d8ef2;
+}
+
 .nutrition-item .label {
     font-size: 0.9rem;
     color: #666;

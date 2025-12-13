@@ -3,6 +3,27 @@ let pollInterval;
 let lastAnalysisId = null;
 let lastAnalysisTimestamp = null;
 
+function getHealthLevelClass(metric, value) {
+    const val = Number(value);
+    if (Number.isNaN(val)) return '';
+    if (metric === 'calories') {
+        if (val >= 400) return 'level-red';
+        if (val >= 200) return 'level-yellow';
+        return 'level-blue';
+    }
+    if (metric === 'gi') {
+        if (val >= 70) return 'level-red';
+        if (val >= 56) return 'level-yellow';
+        return 'level-blue';
+    }
+    if (metric === 'gl') {
+        if (val >= 20) return 'level-red';
+        if (val >= 11) return 'level-yellow';
+        return 'level-blue';
+    }
+    return '';
+}
+
 function startPolling() {
     console.log('🔄 开始轮询最新分析结果...');
     // Check for new results every 2 seconds
@@ -110,7 +131,7 @@ function displayResults(data) {
                 <h3>🥗 营养信息（每 ${weight}g）</h3>
                 <div class="nutrition-grid">
                     <div class="nutrition-item">
-                        <div class="value">${analysis.nutrition.calories}</div>
+                        <div class="value ${getHealthLevelClass('calories', analysis.nutrition.calories)}">${analysis.nutrition.calories}</div>
                         <div class="label">热量</div>
                     </div>
                     <div class="nutrition-item">
@@ -130,11 +151,11 @@ function displayResults(data) {
                         <div class="label">膳食纤维</div>
                     </div>
                     <div class="nutrition-item">
-                        <div class="value">${analysis.nutrition.GI}</div>
+                        <div class="value ${getHealthLevelClass('gi', analysis.nutrition.GI)}">${analysis.nutrition.GI}</div>
                         <div class="label">GI（升糖指数）</div>
                     </div>
                     <div class="nutrition-item">
-                        <div class="value">${analysis.nutrition.GL}</div>
+                        <div class="value ${getHealthLevelClass('gl', analysis.nutrition.GL)}">${analysis.nutrition.GL}</div>
                         <div class="label">GL（升糖负荷）</div>
                     </div>
                 </div>
