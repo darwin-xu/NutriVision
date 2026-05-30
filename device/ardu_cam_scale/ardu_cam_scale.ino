@@ -5,6 +5,7 @@
 #include <HTTPClient.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
+#include <ESPmDNS.h>
 #include "mbedtls/base64.h"
 
 // ArduCam library - you'll need to install this from Library Manager
@@ -126,7 +127,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     function fillProfile(p){if(!p)return;$('profileAge').value=p.age||'';$('profileSex').value=p.sex||'';$('profileHeightCm').value=p.heightCm||'';$('profileWeightKg').value=p.weightKg||'';$('profileAllergens').value=(p.allergens||[]).join(', ');$('goalFatLoss').checked=!!p.goals?.fatLoss;$('goalMuscleGain').checked=!!p.goals?.muscleGain;$('condDiabetes').checked=!!p.conditions?.diabetes;$('condHypertension').checked=!!p.conditions?.hypertension;$('condKidney').checked=!!p.conditions?.kidneyDisease;$('condGout').checked=!!p.conditions?.gout;$('condAllergy').checked=!!p.conditions?.allergy}
     async function saveProfile(){try{const p=profileFromForm();localStorage.setItem('nutrivision.userProfile.v1',JSON.stringify(p));const r=await fetch('/api/profile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});$('profileStatus').textContent=r.ok?'已保存':'保存失败'}catch(e){$('profileStatus').textContent='保存失败'}}
     function metric(label,value){return `<div class="metric"><div class="value">${value}</div><div>${label}</div></div>`}
-    function render(d){if(!d.success){$('statusText').textContent=d.status==='ready'?'设备就绪':'系统已就绪 - 等待设备数据';$('lastUpdate').textContent=d.error||'等待下一次称重';$('results').classList.add('hidden');$('results').innerHTML='';return}const x=d.data;if(x.status==='processing'){$('statusText').textContent='查询中……';$('lastUpdate').textContent='已拍照，正在分析营养建议';$('results').classList.remove('hidden');$('results').innerHTML=`<h2>查询中……</h2><img class="food" src="${x.image.path}" alt="食物图片"><p><strong>重量：</strong>${x.weight}g</p><p>正在生成营养分析，请稍候。</p>`;return}const a=x.analysis,n=a.nutrition;$('statusText').textContent='分析完成';$('lastUpdate').textContent='设备运行时间：'+Math.round(x.timestampMs/1000)+' 秒';$('results').classList.remove('hidden');$('results').innerHTML=`<h2>食物分析结果</h2><img class="food" src="${x.image.path}" alt="食物图片"><p><strong>重量：</strong>${x.weight}g</p><p><strong>食物类型：</strong>${a.foodType}</p><div class="nutrition">${metric('热量',n.calories)}${metric('蛋白质',n.protein+'g')}${metric('碳水',n.carbs+'g')}${metric('脂肪',n.fat+'g')}${metric('膳食纤维',n.fiber+'g')}${metric('GI',n.GI)}${metric('GL',n.GL)}</div><h3>健康建议</h3><ul>${a.healthSuggestions.map(s=>`<li>${s}</li>`).join('')}</ul><h3>菜品推荐</h3><ul>${a.dishSuggestions.map(s=>`<li>${s}</li>`).join('')}</ul>`}
+    function render(d){if(!d.success){$('statusText').textContent=d.status==='ready'?'设备就绪':'系统已就绪 - 等待设备数据';$('lastUpdate').textContent=d.error||'等待下一次称重';$('results').classList.add('hidden');$('results').innerHTML='';return}const x=d.data;if(x.status==='processing'){$('statusText').textContent='查询中……';$('lastUpdate').textContent='已拍照，正在分析营养建议';$('results').classList.remove('hidden');$('results').innerHTML=`<h2>查询中……</h2><img class="food" src="${x.image.path}" alt="食物图片"><p><strong>重量：</strong>${x.weight}g</p><p>正在生成营养分析，请稍候。</p>`;return}const a=x.analysis,n=a.nutrition;const kj=Math.round((Number(n.calories)||0)*4.184);$('statusText').textContent='分析完成';$('lastUpdate').textContent='设备运行时间：'+Math.round(x.timestampMs/1000)+' 秒';$('results').classList.remove('hidden');$('results').innerHTML=`<h2>食物分析结果</h2><img class="food" src="${x.image.path}" alt="食物图片"><p><strong>重量：</strong>${x.weight}g</p><p><strong>食物类型：</strong>${a.foodType}</p><p class="muted">以下营养数据已按本次实际称重 ${x.weight}g 估算，不是每 100g 数据。</p><div class="nutrition">${metric('食物热量',kj+' kJ')}${metric('蛋白质',n.protein+'g')}${metric('碳水',n.carbs+'g')}${metric('脂肪',n.fat+'g')}${metric('膳食纤维',n.fiber+'g')}${metric('GI',n.GI)}${metric('GL',n.GL)}</div><h3>健康建议</h3><ul>${a.healthSuggestions.map(s=>`<li>${s}</li>`).join('')}</ul><h3>菜品推荐</h3><ul>${a.dishSuggestions.map(s=>`<li>${s}</li>`).join('')}</ul>`}
     async function refreshData(){try{const r=await fetch('/api/latest-analysis?t='+Date.now());render(await r.json())}catch(e){$('statusText').textContent='连接异常 - 请检查设备'}}
     async function manualCapture(){try{$('statusText').textContent='正在拍照...';const r=await fetch('/capture?json=1&t='+Date.now());render(await r.json())}catch(e){$('statusText').textContent='拍照失败 - 请检查设备'}}
     (async()=>{try{fillProfile(JSON.parse(localStorage.getItem('nutrivision.userProfile.v1')||'null'));const r=await fetch('/api/profile');const j=await r.json();if(j.success)fillProfile(j.data)}catch(e){}refreshData();setInterval(refreshData,750)})();
@@ -242,6 +243,21 @@ void setupWiFi()
         while (1)
             ;
     }
+}
+
+void setupMDNS()
+{
+    if (WiFi.status() != WL_CONNECTED)
+        return;
+
+    if (!MDNS.begin("nutrivision"))
+    {
+        Serial.println("mDNS setup failed; use the IP address instead.");
+        return;
+    }
+
+    MDNS.addService("http", "tcp", 80);
+    Serial.println("mDNS started: http://nutrivision.local");
 }
 
 void setupWebServer()
@@ -814,6 +830,7 @@ String analyzeWithAiApi()
 
     String prompt =
         "你是一名营养分析助手。请根据食物图片（如果提供）和重量生成中文营养分析。"
+        "所有 nutrition 数值都必须按本次实际称重的食物总量计算，不是每 100g。"
         "仅返回 JSON 对象，不要 markdown，不要额外解释。必须使用下面的精确字段名，"
         "nutrition 里的值必须都是数字，未知也要估算或填 0。结构必须为："
         "{\"foodType\":string,\"confidence\":number,\"nutrition\":{\"calories\":number,"
@@ -1041,6 +1058,7 @@ void setup()
 
     setupCamera();
     setupWiFi();
+    setupMDNS();
     setupWebServer();
     setupScale();
 
