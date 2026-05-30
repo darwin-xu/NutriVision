@@ -10,6 +10,7 @@ A lightweight prototype for food image recognition and nutrition analysis. This 
   - `public/` — static front-end pages (simple demo clients).
   - `uploads/` — runtime folder where uploaded images are stored (not committed).
 - `device/` — Arduino/embedded sketches and related notes (e.g. `ardu_cam_scale.ino`).
+  - `device/ardu_cam_scale/ardu_cam_scale.ino` now hosts the device UI and REST API directly from the Arduino Nano ESP32, so the physical device no longer needs the Node.js server for normal capture/display flow.
 
 ## Features
 
@@ -109,7 +110,11 @@ The simulator script is `server/equipment-simulator.js`.
 The `device/` directory contains an Arduino sketch `ardu_cam_scale.ino` used to capture images and weight from an attached load cell/camera combo. See `device/docs/pin_connections.md` and `device/docs/Design.md` for wiring and design notes.
 
 - Use the Arduino IDE to upload sketches.
-- The device side should POST image and weight to the server's `/api/analyze-food` endpoint.
+- The Nano ESP32 sketch starts its own HTTP server on port 80 after Wi-Fi connects. Open the IP printed in Serial Monitor to use the UI.
+- The device now serves `GET /`, `GET /latest.jpg`, `GET /api/health`, `GET /api/latest-analysis`, `GET /api/profile`, and `POST /api/profile` locally.
+- `POST /api/analyze-food` is kept as a compatibility route, but it triggers a local camera capture instead of forwarding to Node.js.
+- Nutrition analysis now runs from the device through OpenRouter using `mistralai/mistral-small-2603`. The sketch caches the model result after each capture so browser polling does not repeatedly call the LLM.
+- If OpenRouter is unreachable, returns an error, or the captured image is too large to send safely from the ESP32, the device falls back to a weight-based estimate.
 
 ## Development notes
 
