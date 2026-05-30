@@ -48,6 +48,8 @@ const unsigned long AI_REQUEST_COOLDOWN_MS = 0;
 const unsigned long AI_START_DELAY_MS = 900;
 const char*         AI_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const char*         AI_MODEL   = "mistralai/mistral-small-2603";
+const char*         AI_BACKUP_MODEL =
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free";
 const char* AI_API_KEY =
     "REDACTED_OPENROUTER_API_KEY";
 
@@ -827,27 +829,30 @@ String analyzeWithAiApi()
         prompt += "当前图片过大或不可用，请明确说明识别置信度较低，并主要基于重量和用户画像给出建议。";
     }
 
-    String payload = "{\"model\":\"";
-    payload += AI_MODEL;
-    payload += "\",\"messages\":[{\"role\":\"system\",\"content\":\"你是一名营养分析助手，请用中文回答，并且仅输出有效 JSON。\"},{\"role\":\"user\",\"content\":";
+    String payloadPrefix = "{\"model\":\"";
+    String payloadSuffix =
+        "\",\"messages\":[{\"role\":\"system\",\"content\":\"你是一名营养分析助手，请用中文回答，并且仅输出有效 JSON。\"},{\"role\":\"user\",\"content\":";
     if (hasImage)
     {
-        payload += "[{\"type\":\"text\",\"text\":\"";
-        payload += jsonEscape(prompt);
-        payload += "\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/jpeg;base64,";
-        payload += base64Image;
-        payload += "\"}}]";
+        payloadSuffix += "[{\"type\":\"text\",\"text\":\"";
+        payloadSuffix += jsonEscape(prompt);
+        payloadSuffix += "\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/jpeg;base64,";
+        payloadSuffix += base64Image;
+        payloadSuffix += "\"}}]";
     }
     else
     {
-        payload += "\"";
-        payload += jsonEscape(prompt);
-        payload += "\"";
+        payloadSuffix += "\"";
+        payloadSuffix += jsonEscape(prompt);
+        payloadSuffix += "\"";
     }
-    payload += "}],\"response_format\":{\"type\":\"json_object\"},\"temperature\":0.2,\"max_tokens\":700}";
 
-    for (int attempt = 1; attempt <= 2; attempt++)
+    payloadSuffix += "}],\"response_format\":{\"type\":\"json_object\"},\"temperature\":0.2,\"max_tokens\":700}";
+
+    for (int attempt = 1; attempt <= 3; attempt++)
     {
+        const char* model = attempt < 3 ? AI_MODEL : AI_BACKUP_MODEL;
+        String payload = payloadPrefix + String(model) + payloadSuffix;
         WiFiClientSecure client;
         client.setInsecure();
 
@@ -867,6 +872,8 @@ String analyzeWithAiApi()
 
         Serial.print("Calling OpenRouter for nutrition analysis, attempt ");
         Serial.println(attempt);
+        Serial.print("OpenRouter model: ");
+        Serial.println(model);
         Serial.print("OpenRouter payload length: ");
         Serial.println(payload.length());
         Serial.print("OpenRouter image included: ");
@@ -904,10 +911,18 @@ String analyzeWithAiApi()
             response.indexOf("\"choices\"") < 0 &&
             response.indexOf("\"error\"") < 0;
 
-        if (attempt < 2 && emptySuccessfulResponse)
+        if (attempt < 3 && emptySuccessfulResponse)
         {
-            Serial.println(
-                "Retrying OpenRouter once after empty successful response...");
+            if (attempt == 1)
+            {
+                Serial.println(
+                    "Retrying primary OpenRouter model after empty successful response...");
+            }
+            else
+            {
+                Serial.println(
+                    "Primary model returned empty twice; trying backup OpenRouter model...");
+            }
             delay(700);
             continue;
         }

@@ -114,6 +114,7 @@ The `device/` directory contains an Arduino sketch `ardu_cam_scale.ino` used to 
 - The device now serves `GET /`, `GET /latest.jpg`, `GET /api/health`, `GET /api/latest-analysis`, `GET /api/profile`, and `POST /api/profile` locally.
 - `POST /api/analyze-food` is kept as a compatibility route, but it triggers a local camera capture instead of forwarding to Node.js.
 - Nutrition analysis now runs from the device through OpenRouter using `mistralai/mistral-small-2603`. The sketch caches the model result after each capture so browser polling does not repeatedly call the LLM.
+- If the primary Mistral route returns an empty successful response twice, the sketch retries once with `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`.
 - If OpenRouter is unreachable, returns an error, or the captured image is too large to send safely from the ESP32, the device falls back to a weight-based estimate.
 
 ## Development notes
