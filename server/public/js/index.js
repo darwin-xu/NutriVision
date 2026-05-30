@@ -3,6 +3,176 @@ let pollInterval;
 let lastAnalysisId = null;
 let lastAnalysisTimestamp = null;
 
+const PROFILE_STORAGE_KEY = 'nutrivision.userProfile.v1';
+
+function getDefaultProfile() {
+    return {
+        age: null,
+        sex: '',
+        heightCm: null,
+        weightKg: null,
+        allergens: [],
+        goals: { fatLoss: false, muscleGain: false },
+        conditions: {
+            diabetes: false,
+            hypertension: false,
+            kidneyDisease: false,
+            gout: false,
+            allergy: false,
+        },
+    };
+}
+
+function safeParseJSON(text, fallback) {
+    try {
+        return JSON.parse(text);
+    } catch {
+        return fallback;
+    }
+}
+
+function normalizeAllergensText(text) {
+    const raw = String(text || '')
+        .replace(/，/g, ',')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+    // de-dup
+    return Array.from(new Set(raw)).slice(0, 30);
+}
+
+function loadProfileFromLocalStorage() {
+    const raw = localStorage.getItem(PROFILE_STORAGE_KEY);
+    if (!raw) return getDefaultProfile();
+    const parsed = safeParseJSON(raw, null);
+    if (!parsed || typeof parsed !== 'object') return getDefaultProfile();
+
+    const d = getDefaultProfile();
+    return {
+        ...d,
+        ...parsed,
+        goals: { ...d.goals, ...(parsed.goals || {}) },
+        conditions: { ...d.conditions, ...(parsed.conditions || {}) },
+        allergens: Array.isArray(parsed.allergens)
+            ? parsed.allergens.map(a => String(a)).filter(Boolean)
+            : d.allergens,
+    };
+}
+
+function saveProfileToLocalStorage(profile) {
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
+}
+
+function setProfileStatus(text) {
+    const el = document.getElementById('profileStatus');
+    if (el) el.textContent = text || '';
+}
+
+function readProfileFromForm() {
+    const age = Number(document.getElementById('profileAge')?.value);
+    const heightCm = Number(document.getElementById('profileHeightCm')?.value);
+    const weightKg = Number(document.getElementById('profileWeightKg')?.value);
+    const sex = String(document.getElementById('profileSex')?.value || '');
+    const allergensText = String(document.getElementById('profileAllergens')?.value || '');
+
+    const profile = getDefaultProfile();
+    profile.age = Number.isFinite(age) && age > 0 ? Math.round(age) : null;
+    profile.heightCm = Number.isFinite(heightCm) && heightCm > 0 ? Math.round(heightCm) : null;
+    profile.weightKg = Number.isFinite(weightKg) && weightKg > 0 ? Math.round(weightKg * 10) / 10 : null;
+    profile.sex = sex;
+    profile.allergens = normalizeAllergensText(allergensText);
+    profile.goals.fatLoss = !!document.getElementById('goalFatLoss')?.checked;
+    profile.goals.muscleGain = !!document.getElementById('goalMuscleGain')?.checked;
+    profile.conditions.diabetes = !!document.getElementById('condDiabetes')?.checked;
+    profile.conditions.hypertension = !!document.getElementById('condHypertension')?.checked;
+    profile.conditions.kidneyDisease = !!document.getElementById('condKidney')?.checked;
+    profile.conditions.gout = !!document.getElementById('condGout')?.checked;
+    profile.conditions.allergy = !!document.getElementById('condAllergy')?.checked;
+    return profile;
+}
+
+function fillProfileForm(profile) {
+    const p = profile || getDefaultProfile();
+    const ageEl = document.getElementById('profileAge');
+    const sexEl = document.getElementById('profileSex');
+    const heightEl = document.getElementById('profileHeightCm');
+    const weightEl = document.getElementById('profileWeightKg');
+    const allergensEl = document.getElementById('profileAllergens');
+
+    if (ageEl) ageEl.value = p.age ?? '';
+    if (sexEl) sexEl.value = p.sex || '';
+    if (heightEl) heightEl.value = p.heightCm ?? '';
+    if (weightEl) weightEl.value = p.weightKg ?? '';
+    if (allergensEl) allergensEl.value = (p.allergens || []).join(', ');
+
+    const goalFatLoss = document.getElementById('goalFatLoss');
+    const goalMuscleGain = document.getElementById('goalMuscleGain');
+    if (goalFatLoss) goalFatLoss.checked = !!p.goals?.fatLoss;
+    if (goalMuscleGain) goalMuscleGain.checked = !!p.goals?.muscleGain;
+
+    const condDiabetes = document.getElementById('condDiabetes');
+    const condHypertension = document.getElementById('condHypertension');
+    const condKidney = document.getElementById('condKidney');
+    const condGout = document.getElementById('condGout');
+    const condAllergy = document.getElementById('condAllergy');
+    if (condDiabetes) condDiabetes.checked = !!p.conditions?.diabetes;
+    if (condHypertension) condHypertension.checked = !!p.conditions?.hypertension;
+    if (condKidney) condKidney.checked = !!p.conditions?.kidneyDisease;
+    if (condGout) condGout.checked = !!p.conditions?.gout;
+    if (condAllergy) condAllergy.checked = !!p.conditions?.allergy;
+}
+
+async function postProfileToServer(profile) {
+    const resp = await fetch('/api/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profile),
+    });
+    if (!resp.ok) {
+        throw new Error('Profile API failed: ' + resp.status);
+    }
+    const data = await resp.json();
+    if (!data || !data.success) {
+        throw new Error(data?.error || 'Profile API returned failure');
+    }
+    return data.data;
+}
+
+function initProfileForm() {
+    // Load from localStorage first (since server is non-persistent)
+    const profile = loadProfileFromLocalStorage();
+    fillProfileForm(profile);
+
+    const btn = document.getElementById('profileSaveBtn');
+    if (btn) {
+        btn.addEventListener('click', async () => {
+            try {
+                setProfileStatus('正在保存...');
+                const p = readProfileFromForm();
+                saveProfileToLocalStorage(p);
+                await postProfileToServer(p);
+                setProfileStatus('已保存（将用于后续菜品推荐）');
+            } catch (e) {
+                console.error('❌ 保存用户画像失败:', e);
+                setProfileStatus('保存失败：请检查服务器连接');
+            }
+        });
+    }
+
+    // Best-effort: if server already has a profile, reflect it.
+    // (localStorage仍然作为主要来源；不做自动覆盖)
+    fetch('/api/profile')
+        .then(r => (r.ok ? r.json() : null))
+        .then(j => {
+            if (j && j.success && j.data) {
+                setProfileStatus('服务器已加载画像（用于后续菜品推荐）');
+            }
+        })
+        .catch(() => {
+            // ignore
+        });
+}
+
 function getHealthLevelClass(metric, value) {
     const val = Number(value);
     if (Number.isNaN(val)) return '';
@@ -189,6 +359,7 @@ document.addEventListener('DOMContentLoaded', function () {
         '系统已就绪 - 等待设备数据',
         '页面加载时间：' + new Date().toLocaleTimeString()
     );
+    initProfileForm();
     console.log('🔄 开始轮询系统...');
     startPolling();
     console.log('✅ 系统初始化完成！');

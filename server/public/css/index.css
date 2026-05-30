@@ -200,6 +200,106 @@ body {
     text-align: center;
 }
 
+.profile-section {
+    margin-top: 25px;
+    padding: 25px;
+    background: linear-gradient(135deg, #f8f9ff 0%, #fff 100%);
+    border-radius: 15px;
+    border: 1px solid #e6e9ff;
+    text-align: left;
+}
+
+.section-title {
+    font-size: 1.4rem;
+    color: #667eea;
+    text-align: center;
+    margin-bottom: 15px;
+}
+
+.profile-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+}
+
+.form-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.form-row-wide {
+    grid-column: 1 / -1;
+}
+
+.form-row label {
+    font-size: 0.95rem;
+    color: #555;
+    font-weight: 600;
+}
+
+.form-row input,
+.form-row select {
+    padding: 10px 12px;
+    border: 1px solid #e6e9ff;
+    border-radius: 10px;
+    font-size: 1rem;
+    outline: none;
+}
+
+.form-row input:focus,
+.form-row select:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+.checkbox-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    padding: 8px 10px;
+    background: #ffffff;
+    border: 1px solid #e6e9ff;
+    border-radius: 10px;
+}
+
+.checkbox-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.95rem;
+    color: #444;
+}
+
+.form-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.primary-btn {
+    appearance: none;
+    border: none;
+    border-radius: 12px;
+    padding: 10px 16px;
+    background: #667eea;
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.primary-btn:active {
+    transform: translateY(1px);
+}
+
+.form-hint {
+    font-size: 0.95rem;
+    color: #666;
+}
+
 @media (max-width: 768px) {
     .container {
         padding: 10px;
@@ -215,5 +315,9 @@ body {
 
     .header p {
         font-size: 1.2rem;
+    }
+
+    .profile-section {
+        padding: 18px;
     }
 }

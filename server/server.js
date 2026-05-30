@@ -19,6 +19,23 @@ const LLM_MAX_TOKENS = Number(process.env.LLM_MAX_TOKENS || 512);
 // Store the latest analysis result in memory (in production, use a database)
 let latestAnalysis = null;
 
+// Store a single active user profile in memory (single-user demo; no persistence)
+let activeUserProfile = {
+    age: null,
+    sex: '',
+    heightCm: null,
+    weightKg: null,
+    allergens: [],
+    goals: { fatLoss: false, muscleGain: false },
+    conditions: {
+        diabetes: false,
+        hypertension: false,
+        kidneyDisease: false,
+        gout: false,
+        allergy: false,
+    },
+};
+
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
@@ -85,13 +102,103 @@ function getMimeTypeByExt(ext) {
     return 'image/jpeg';
 }
 
-async function analyzeWithLLM(imageFsPath, weight) {
+function normalizeAllergens(allergens) {
+    if (!allergens) return [];
+    if (Array.isArray(allergens)) {
+        return Array.from(
+            new Set(allergens.map(a => String(a).trim()).filter(Boolean))
+        ).slice(0, 30);
+    }
+    const text = String(allergens || '').replace(/，/g, ',');
+    return Array.from(
+        new Set(text.split(',').map(s => s.trim()).filter(Boolean))
+    ).slice(0, 30);
+}
+
+function toBoolean(x) {
+    if (typeof x === 'boolean') return x;
+    if (typeof x === 'number') return x !== 0;
+    if (typeof x === 'string') {
+        const v = x.trim().toLowerCase();
+        if (v === 'true' || v === '1' || v === 'yes' || v === 'y') return true;
+        if (v === 'false' || v === '0' || v === 'no' || v === 'n') return false;
+    }
+    return false;
+}
+
+function normalizeUserProfile(input) {
+    const base = {
+        age: null,
+        sex: '',
+        heightCm: null,
+        weightKg: null,
+        allergens: [],
+        goals: { fatLoss: false, muscleGain: false },
+        conditions: {
+            diabetes: false,
+            hypertension: false,
+            kidneyDisease: false,
+            gout: false,
+            allergy: false,
+        },
+    };
+
+    const obj = input && typeof input === 'object' ? input : {};
+    const age = Number(obj.age);
+    const heightCm = Number(obj.heightCm);
+    const weightKg = Number(obj.weightKg);
+
+    return {
+        ...base,
+        age: Number.isFinite(age) && age > 0 ? Math.max(1, Math.min(120, Math.round(age))) : null,
+        sex: typeof obj.sex === 'string' ? obj.sex.slice(0, 16) : '',
+        heightCm: Number.isFinite(heightCm) && heightCm > 0 ? Math.max(30, Math.min(250, Math.round(heightCm))) : null,
+        weightKg: Number.isFinite(weightKg) && weightKg > 0 ? Math.max(10, Math.min(300, Math.round(weightKg * 10) / 10)) : null,
+        allergens: normalizeAllergens(obj.allergens),
+        goals: {
+            fatLoss: toBoolean(obj.goals?.fatLoss),
+            muscleGain: toBoolean(obj.goals?.muscleGain),
+        },
+        conditions: {
+            diabetes: toBoolean(obj.conditions?.diabetes),
+            hypertension: toBoolean(obj.conditions?.hypertension),
+            kidneyDisease: toBoolean(obj.conditions?.kidneyDisease),
+            gout: toBoolean(obj.conditions?.gout),
+            allergy: toBoolean(obj.conditions?.allergy),
+        },
+    };
+}
+
+async function analyzeWithLLM(imageFsPath, weight, userProfile) {
     const imageBuffer = fs.readFileSync(imageFsPath);
     const base64 = imageBuffer.toString('base64');
     const mime = getMimeTypeByExt(path.extname(imageFsPath || ''));
 
+    const p = normalizeUserProfile(userProfile || activeUserProfile);
+    const profileText = `用户画像（用于个性化菜品推荐）：
+- 年龄：${p.age ?? '未知'}
+- 性别：${p.sex || '未知'}
+- 身高：${p.heightCm ?? '未知'} cm
+- 体重：${p.weightKg ?? '未知'} kg
+- 过敏原：${(p.allergens || []).length ? (p.allergens || []).join('、') : '无/未知'}
+- 目标：${[p.goals?.fatLoss ? '减脂' : null, p.goals?.muscleGain ? '增肌' : null].filter(Boolean).join('、') || '无/未知'}
+- 慢病/情况：${[
+        p.conditions?.diabetes ? '糖尿病' : null,
+        p.conditions?.hypertension ? '高血压' : null,
+        p.conditions?.kidneyDisease ? '肾病' : null,
+        p.conditions?.gout ? '痛风' : null,
+        p.conditions?.allergy ? '过敏' : null,
+    ].filter(Boolean).join('、') || '无/未知'}
+`;
+
         const userText = `你是一名营养分析助手。
 给定一张食物图片以及 ${weight} 克的重量，请识别图片中的主要食物，并基于该重量输出营养数据。
+
+${profileText}
+
+特别要求（用于菜品推荐）：
+- dishSuggestions 必须结合用户画像给出 1-3 道“下一餐/搭配餐”的具体菜式推荐（不要泛泛而谈）。
+- 必须避开用户过敏原；如用户有慢病/目标，优先选择更匹配的方案（例如：糖尿病更偏低 GI/GL；高血压偏低钠；肾病避免高蛋白/高钠；痛风避免高嘌呤）。
 
 仅返回符合以下结构的有效 JSON（不要添加额外解释）：
 {
@@ -106,8 +213,8 @@ async function analyzeWithLLM(imageFsPath, weight) {
         "GI": number,       // 该食物类型的升糖指数 (1-100，未知则估算或使用 0)
         "GL": number        // 针对此重量的升糖负荷（未知则估算或使用 0）
     },
-    "healthSuggestions": string[], // 2-4 条简短健康建议
-    "dishSuggestions": string[] // 1-3 条适合该食物的菜品推荐
+    "healthSuggestions": string[], // 2-4 条健康建议, 请结合用户画像
+    "dishSuggestions": string[] // 1-3 条适合该食物的菜品推荐，请结合用户画像生成
 }`;
 
     const payload = {
@@ -248,7 +355,7 @@ app.post('/api/analyze-food', upload.single('foodImage'), async (req, res) => {
         const filePathOnDisk = path.join(__dirname, req.file.path || '');
         (async () => {
             try {
-                const llmAnalysis = await analyzeWithLLM(filePathOnDisk, weight);
+                const llmAnalysis = await analyzeWithLLM(filePathOnDisk, weight, activeUserProfile);
                 const completed = {
                     id: uploadId,
                     image: imageMeta,
@@ -279,6 +386,21 @@ app.post('/api/analyze-food', upload.single('foodImage'), async (req, res) => {
     } catch (error) {
         console.error('❌ Error during upload handling:', error.message);
         res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+});
+
+// Active user profile (single-user, no persistence)
+app.get('/api/profile', (req, res) => {
+    res.json({ success: true, data: activeUserProfile });
+});
+
+app.post('/api/profile', (req, res) => {
+    try {
+        const normalized = normalizeUserProfile(req.body);
+        activeUserProfile = normalized;
+        res.json({ success: true, data: activeUserProfile });
+    } catch (e) {
+        res.status(400).json({ success: false, error: 'Invalid profile payload' });
     }
 });
 

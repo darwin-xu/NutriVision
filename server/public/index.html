@@ -28,6 +28,58 @@
                     </div>
                     <div class="last-update" id="lastUpdate"></div>
                 </div>
+
+                <div class="profile-section" aria-label="用户画像">
+                    <h2 class="section-title">👤 用户画像</h2>
+                    <div class="profile-grid">
+                        <div class="form-row">
+                            <label for="profileAge">年龄</label>
+                            <input id="profileAge" type="number" min="0" max="120" placeholder="例如：28" />
+                        </div>
+                        <div class="form-row">
+                            <label for="profileSex">性别</label>
+                            <select id="profileSex">
+                                <option value="">未选择</option>
+                                <option value="male">男</option>
+                                <option value="female">女</option>
+                                <option value="other">其他</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <label for="profileHeightCm">身高（cm）</label>
+                            <input id="profileHeightCm" type="number" min="0" max="250" placeholder="例如：172" />
+                        </div>
+                        <div class="form-row">
+                            <label for="profileWeightKg">体重（kg）</label>
+                            <input id="profileWeightKg" type="number" min="0" max="300" step="0.1" placeholder="例如：65" />
+                        </div>
+                        <div class="form-row form-row-wide">
+                            <label for="profileAllergens">过敏原（用逗号分隔）</label>
+                            <input id="profileAllergens" type="text" placeholder="例如：花生, 牛奶, 虾" />
+                        </div>
+                        <div class="form-row form-row-wide">
+                            <label>目标</label>
+                            <div class="checkbox-row">
+                                <label class="checkbox-item"><input id="goalFatLoss" type="checkbox" />减脂</label>
+                                <label class="checkbox-item"><input id="goalMuscleGain" type="checkbox" />增肌</label>
+                            </div>
+                        </div>
+                        <div class="form-row form-row-wide">
+                            <label>慢病/情况</label>
+                            <div class="checkbox-row">
+                                <label class="checkbox-item"><input id="condDiabetes" type="checkbox" />糖尿病</label>
+                                <label class="checkbox-item"><input id="condHypertension" type="checkbox" />高血压</label>
+                                <label class="checkbox-item"><input id="condKidney" type="checkbox" />肾病</label>
+                                <label class="checkbox-item"><input id="condGout" type="checkbox" />痛风</label>
+                                <label class="checkbox-item"><input id="condAllergy" type="checkbox" />过敏</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button id="profileSaveBtn" class="primary-btn" type="button">保存画像</button>
+                        <span id="profileStatus" class="form-hint" aria-live="polite"></span>
+                    </div>
+                </div>
             </div>
 
             <div id="loadingSection" class="loading">
