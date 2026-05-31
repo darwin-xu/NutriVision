@@ -37,10 +37,15 @@ WebServer server(80);
 // State tracking
 bool                weightDetected       = false;
 unsigned long       lastWeightCheck      = 0;
-const unsigned long WEIGHT_DEBOUNCE_TIME = 2000; // 2 seconds debounce
 const size_t        LOCAL_IMAGE_MAX_BYTES = 180 * 1024;
 const float         AUTO_CAPTURE_THRESHOLD_GRAMS = 50.0;
-const float         WEIGHT_REMOVED_THRESHOLD_GRAMS = 25.0;
+const float         WEIGHT_REMOVED_THRESHOLD_GRAMS = 20.0;
+const unsigned long WEIGHT_SAMPLE_INTERVAL_MS = 150;
+const unsigned long SETTLE_MIN_MS = 1000;
+const unsigned long SETTLE_MAX_MS = 3000;
+const unsigned long REMOVED_HOLD_MS = 1500;
+const float         STABLE_WEIGHT_RANGE_GRAMS = 5.0;
+const size_t        STABLE_SAMPLE_COUNT = 8;
 const size_t        LLM_IMAGE_MAX_BYTES = 60 * 1024;
 const size_t        AI_ERROR_LOG_MAX_CHARS = 700;
 const size_t        AI_CONTENT_LOG_MAX_CHARS = 700;
@@ -64,6 +69,12 @@ unsigned long pendingAiStartMs    = 0;
 bool          pendingAiAnalysis  = false;
 String        deviceState        = "ready";
 String        latestAnalysisJson = "";
+float         weightSamples[STABLE_SAMPLE_COUNT];
+size_t        weightSampleIndex = 0;
+size_t        weightSampleCount = 0;
+unsigned long settlingStartedMs = 0;
+unsigned long lastWeightSampleMs = 0;
+unsigned long removalStartedMs = 0;
 String        activeUserProfile =
     "{\"age\":null,\"sex\":\"\",\"heightCm\":null,\"weightKg\":null,"
     "\"allergens\":[],\"goals\":{\"fatLoss\":false,\"muscleGain\":false},"
@@ -99,7 +110,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       <div class="status"><strong id="statusText">系统已就绪 - 等待设备数据</strong><div id="lastUpdate" class="muted"></div></div>
       <div class="actions">
         <button onclick="manualCapture()">手动拍照</button>
-        <button class="secondary" onclick="refreshData()">刷新结果</button>
+        <button class="secondary" onclick="tareScale()">校准秤</button>
       </div>
     </section>
 
@@ -130,6 +141,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     function render(d){if(!d.success){$('statusText').textContent=d.status==='ready'?'设备就绪':'系统已就绪 - 等待设备数据';$('lastUpdate').textContent=d.error||'等待下一次称重';$('results').classList.add('hidden');$('results').innerHTML='';return}const x=d.data;if(x.status==='processing'){$('statusText').textContent='查询中……';$('lastUpdate').textContent='已拍照，正在分析营养建议';$('results').classList.remove('hidden');$('results').innerHTML=`<h2>查询中……</h2><img class="food" src="${x.image.path}" alt="食物图片"><p><strong>重量：</strong>${x.weight}g</p><p>正在生成营养分析，请稍候。</p>`;return}const a=x.analysis,n=a.nutrition;const kj=Math.round((Number(n.calories)||0)*4.184);$('statusText').textContent='分析完成';$('lastUpdate').textContent='设备运行时间：'+Math.round(x.timestampMs/1000)+' 秒';$('results').classList.remove('hidden');$('results').innerHTML=`<h2>食物分析结果</h2><img class="food" src="${x.image.path}" alt="食物图片"><p><strong>重量：</strong>${x.weight}g</p><p><strong>食物类型：</strong>${a.foodType}</p><p class="muted">以下营养数据已按本次实际称重 ${x.weight}g 估算，不是每 100g 数据。</p><div class="nutrition">${metric('食物热量',kj+' kJ')}${metric('蛋白质',n.protein+'g')}${metric('碳水',n.carbs+'g')}${metric('脂肪',n.fat+'g')}${metric('膳食纤维',n.fiber+'g')}${metric('GI',n.GI)}${metric('GL',n.GL)}</div><h3>健康建议</h3><ul>${a.healthSuggestions.map(s=>`<li>${s}</li>`).join('')}</ul><h3>菜品推荐</h3><ul>${a.dishSuggestions.map(s=>`<li>${s}</li>`).join('')}</ul>`}
     async function refreshData(){try{const r=await fetch('/api/latest-analysis?t='+Date.now());render(await r.json())}catch(e){$('statusText').textContent='连接异常 - 请检查设备'}}
     async function manualCapture(){try{$('statusText').textContent='正在拍照...';const r=await fetch('/capture?json=1&t='+Date.now());render(await r.json())}catch(e){$('statusText').textContent='拍照失败 - 请检查设备'}}
+    async function tareScale(){try{$('statusText').textContent='正在校准秤...';const r=await fetch('/api/tare',{method:'POST'});const j=await r.json();$('statusText').textContent=j.success?'设备就绪':'校准失败';$('lastUpdate').textContent=j.success?'秤已归零，请放置食物':'请检查设备连接'}catch(e){$('statusText').textContent='校准失败'}}
     (async()=>{try{fillProfile(JSON.parse(localStorage.getItem('nutrivision.userProfile.v1')||'null'));const r=await fetch('/api/profile');const j=await r.json();if(j.success)fillProfile(j.data)}catch(e){}refreshData();setInterval(refreshData,750)})();
   </script>
 </body>
@@ -273,6 +285,7 @@ void setupWebServer()
     server.on("/api/latest-analysis", HTTP_GET, handleLatestAnalysis);
     server.on("/api/profile", HTTP_GET, handleGetProfile);
     server.on("/api/profile", HTTP_POST, handlePostProfile);
+    server.on("/api/tare", HTTP_POST, handleTareScale);
     server.on("/api/analyze-food", HTTP_POST, handleAnalyzeFood);
     server.onNotFound(handleNotFound);
     server.begin();
@@ -1019,6 +1032,17 @@ void handlePostProfile()
     activeUserProfile = body;
     server.send(200, "application/json",
                 "{\"success\":true,\"data\":" + activeUserProfile + "}");
+}
+
+void handleTareScale()
+{
+    Serial.println("Scale tare requested from web UI");
+    scale.tare();
+    weightDetected = false;
+    resetForNextItem();
+    server.send(200, "application/json",
+                "{\"success\":true,\"status\":\"ready\",\"message\":\"Scale "
+                "tared\"}");
 }
 
 void handleAnalyzeFood()
