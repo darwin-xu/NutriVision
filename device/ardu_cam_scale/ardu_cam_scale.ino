@@ -29,6 +29,8 @@ HX711 scale;
 ArduCAM myCAM(OV5642, CS_PIN);
 
 // WiFi credentials
+// const char* ssid     = "William’s iPhone";
+// const char* password = "11451419";
 const char* ssid     = "a-tp";
 const char* password = "opop9090";
 
@@ -53,9 +55,9 @@ const size_t        AI_RESPONSE_LOG_MAX_CHARS = 1200;
 const unsigned long AI_REQUEST_COOLDOWN_MS = 0;
 const unsigned long AI_START_DELAY_MS = 2000;
 const char*         AI_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const char*         AI_MODEL   = "mistralai/mistral-small-2603";
-const char*         AI_BACKUP_MODEL =
-    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free";
+const char*         AI_MODEL   = "bytedance-seed/seed-1.6-flash";
+
+String selectedAiModel = AI_MODEL;
 
 uint8_t*      latestImage       = nullptr;
 size_t        latestImageSize   = 0;
@@ -110,6 +112,14 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         <button onclick="manualCapture()">手动拍照</button>
         <button class="secondary" onclick="tareScale()">校准秤</button>
       </div>
+      <div class="grid" style="margin-top:14px">
+        <div><label>AI 模型<select id="aiModelSelect" onchange="saveAiModel()">
+          <option value="mistralai/mistral-small-2603">mistralai/mistral-small-2603</option>
+          <option value="mistralai/ministral-8b-2512">mistralai/ministral-8b-2512</option>
+          <option value="bytedance-seed/seed-1.6-flash" selected>bytedance-seed/seed-1.6-flash</option>
+          <option value="meta-llama/llama-4-scout">meta-llama/llama-4-scout</option>
+        </select></label></div>
+      </div>
     </section>
 
     <section class="panel">
@@ -136,11 +146,13 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     function fillProfile(p){if(!p)return;$('profileAge').value=p.age||'';$('profileSex').value=p.sex||'';$('profileHeightCm').value=p.heightCm||'';$('profileWeightKg').value=p.weightKg||'';$('profileAllergens').value=(p.allergens||[]).join(', ');$('goalFatLoss').checked=!!p.goals?.fatLoss;$('goalMuscleGain').checked=!!p.goals?.muscleGain;$('condDiabetes').checked=!!p.conditions?.diabetes;$('condHypertension').checked=!!p.conditions?.hypertension;$('condKidney').checked=!!p.conditions?.kidneyDisease;$('condGout').checked=!!p.conditions?.gout;$('condAllergy').checked=!!p.conditions?.allergy}
     async function saveProfile(){try{const p=profileFromForm();localStorage.setItem('nutrivision.userProfile.v1',JSON.stringify(p));const r=await fetch('/api/profile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});$('profileStatus').textContent=r.ok?'已保存':'保存失败'}catch(e){$('profileStatus').textContent='保存失败'}}
     function metric(label,value){return `<div class="metric"><div class="value">${value}</div><div>${label}</div></div>`}
-    function render(d){if(!d.success){$('statusText').textContent=d.status==='ready'?'设备就绪':'系统已就绪 - 等待设备数据';$('lastUpdate').textContent=d.error||'等待下一次称重';$('results').classList.add('hidden');$('results').innerHTML='';return}const x=d.data;if(x.status==='processing'){$('statusText').textContent='查询中……';$('lastUpdate').textContent='已拍照，正在分析营养建议';$('results').classList.remove('hidden');$('results').innerHTML=`<h2>查询中……</h2><img class="food" src="${x.image.path}" alt="食物图片"><p><strong>重量：</strong>${x.weight}g</p><p>正在生成营养分析，请稍候。</p>`;return}const a=x.analysis,n=a.nutrition;const kj=Math.round((Number(n.calories)||0)*4.184);$('statusText').textContent='分析完成';$('lastUpdate').textContent='设备运行时间：'+Math.round(x.timestampMs/1000)+' 秒';$('results').classList.remove('hidden');$('results').innerHTML=`<h2>食物分析结果</h2><img class="food" src="${x.image.path}" alt="食物图片"><p><strong>重量：</strong>${x.weight}g</p><p><strong>食物类型：</strong>${a.foodType}</p><p class="muted">以下营养数据已按本次实际称重 ${x.weight}g 估算，不是每 100g 数据。</p><div class="nutrition">${metric('食物热量',kj+' kJ')}${metric('蛋白质',n.protein+'g')}${metric('碳水',n.carbs+'g')}${metric('脂肪',n.fat+'g')}${metric('膳食纤维',n.fiber+'g')}${metric('GI',n.GI)}${metric('GL',n.GL)}</div><h3>健康建议</h3><ul>${a.healthSuggestions.map(s=>`<li>${s}</li>`).join('')}</ul><h3>菜品推荐</h3><ul>${a.dishSuggestions.map(s=>`<li>${s}</li>`).join('')}</ul>`}
+    function render(d){if(!d.success){$('statusText').textContent=d.status==='ready'?'设备就绪':'系统已就绪 - 等待设备数据';$('lastUpdate').textContent=d.error||'等待下一次称重';$('results').classList.add('hidden');$('results').innerHTML='';return}const x=d.data;if(x.status==='processing'){$('statusText').textContent='查询中……';$('lastUpdate').textContent='已拍照，正在分析营养建议';$('results').classList.remove('hidden');$('results').innerHTML=`<h2>查询中……</h2><img class="food" src="${x.image.path}" alt="食物图片"><p><strong>重量：</strong>${x.weight}g</p><p>正在生成营养分析，请稍候。</p>`;return}const a=x.analysis,n=a.nutrition;const kj=Math.round((Number(n.calories)||0)*4.184);const cautions=Array.isArray(a.cautions)?a.cautions:[];$('statusText').textContent='分析完成';$('lastUpdate').textContent='设备运行时间：'+Math.round(x.timestampMs/1000)+' 秒';$('results').classList.remove('hidden');$('results').innerHTML=`<h2>食物分析结果</h2><img class="food" src="${x.image.path}" alt="食物图片"><p><strong>重量：</strong>${x.weight}g</p><p><strong>食物类型：</strong>${a.foodType}</p><p class="muted">以下营养数据已按本次实际称重 ${x.weight}g 估算，不是每 100g 数据。</p><div class="nutrition">${metric('食物热量',kj+' kJ')}${metric('蛋白质',n.protein+'g')}${metric('碳水',n.carbs+'g')}${metric('脂肪',n.fat+'g')}${metric('膳食纤维',n.fiber+'g')}${metric('GI',n.GI)}${metric('GL',n.GL)}</div><h3>注意事项</h3><ul>${(cautions.length?cautions:['请结合个人过敏原、慢病情况和医生建议判断是否适合食用。']).map(s=>`<li>${s}</li>`).join('')}</ul><h3>健康建议</h3><ul>${a.healthSuggestions.map(s=>`<li>${s}</li>`).join('')}</ul><h3>菜品推荐</h3><ul>${a.dishSuggestions.map(s=>`<li>${s}</li>`).join('')}</ul>`}
     async function refreshData(){try{const r=await fetch('/api/latest-analysis?t='+Date.now());render(await r.json())}catch(e){$('statusText').textContent='连接异常 - 请检查设备'}}
     async function manualCapture(){try{$('statusText').textContent='正在拍照...';const r=await fetch('/capture?json=1&t='+Date.now());render(await r.json())}catch(e){$('statusText').textContent='拍照失败 - 请检查设备'}}
     async function tareScale(){try{$('statusText').textContent='正在校准秤...';const r=await fetch('/api/tare',{method:'POST'});const j=await r.json();$('statusText').textContent=j.success?'设备就绪':'校准失败';$('lastUpdate').textContent=j.success?'秤已归零，请放置食物':'请检查设备连接'}catch(e){$('statusText').textContent='校准失败'}}
-    (async()=>{try{fillProfile(JSON.parse(localStorage.getItem('nutrivision.userProfile.v1')||'null'));const r=await fetch('/api/profile');const j=await r.json();if(j.success)fillProfile(j.data)}catch(e){}refreshData();setInterval(refreshData,750)})();
+    async function loadAiConfig(){try{const r=await fetch('/api/config');const j=await r.json();if(j.success&&j.data?.model)$('aiModelSelect').value=j.data.model}catch(e){}}
+    async function saveAiModel(){try{const model=$('aiModelSelect').value;const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model})});const j=await r.json();$('lastUpdate').textContent=j.success?'AI 模型已切换：'+model:'AI 模型切换失败'}catch(e){$('lastUpdate').textContent='AI 模型切换失败'}}
+    (async()=>{try{fillProfile(JSON.parse(localStorage.getItem('nutrivision.userProfile.v1')||'null'));const r=await fetch('/api/profile');const j=await r.json();if(j.success)fillProfile(j.data)}catch(e){}await loadAiConfig();refreshData();setInterval(refreshData,750)})();
   </script>
 </body>
 </html>
@@ -281,6 +293,8 @@ void setupWebServer()
     server.on("/status", handleStatus);
     server.on("/api/health", HTTP_GET, handleHealth);
     server.on("/api/latest-analysis", HTTP_GET, handleLatestAnalysis);
+    server.on("/api/config", HTTP_GET, handleGetConfig);
+    server.on("/api/config", HTTP_POST, handlePostConfig);
     server.on("/api/profile", HTTP_GET, handleGetProfile);
     server.on("/api/profile", HTTP_POST, handlePostProfile);
     server.on("/api/tare", HTTP_POST, handleTareScale);
@@ -573,6 +587,10 @@ String buildFallbackAnalysisObjectJson(String reason)
     json += "],";
     json += "\"dishSuggestions\":[";
     json += "\"搭配一份蔬菜和适量优质蛋白，获得更均衡的一餐。\"";
+    json += "],";
+    json += "\"cautions\":[";
+    json += "\"请确认该食物不包含个人过敏原。\",";
+    json += "\"" + jsonEscape(reason) + "\"";
     json += "]";
     json += "}";
     return json;
@@ -665,20 +683,34 @@ String jsonUnescape(String input)
     return output;
 }
 
-String extractContentFromAiApi(String response)
+String extractJsonStringField(String response, String fieldName)
 {
-    int key = response.indexOf("\"content\"");
+    String keyName = "\"" + fieldName + "\"";
+    int key = response.indexOf(keyName);
     if (key < 0)
         return "";
 
     int colon = response.indexOf(':', key);
-    int start = response.indexOf('"', colon + 1);
-    if (colon < 0 || start < 0)
+    if (colon < 0)
+        return "";
+
+    int valueStart = colon + 1;
+    while (valueStart < response.length() &&
+           (response[valueStart] == ' ' || response[valueStart] == '\n' ||
+            response[valueStart] == '\r' || response[valueStart] == '\t'))
+    {
+        valueStart++;
+    }
+
+    if (response.startsWith("null", valueStart))
+        return "";
+
+    if (valueStart >= response.length() || response[valueStart] != '"')
         return "";
 
     String encoded = "";
     bool escaping = false;
-    for (int i = start + 1; i < response.length(); i++)
+    for (int i = valueStart + 1; i < response.length(); i++)
     {
         char c = response[i];
         if (escaping)
@@ -702,6 +734,17 @@ String extractContentFromAiApi(String response)
     }
 
     return jsonUnescape(encoded);
+}
+
+String extractContentFromAiApi(String response)
+{
+    String content = extractJsonStringField(response, "content");
+    if (content.length() > 0)
+        return content;
+
+    // Some reasoning models put the useful text in `reasoning` and set
+    // `content` to null, so fall back to that field before giving up.
+    return extractJsonStringField(response, "reasoning");
 }
 
 String extractJsonObject(String text)
@@ -840,17 +883,24 @@ String analyzeWithAiApi()
     bool hasImage = base64Image.length() > 0;
 
     String prompt =
-        "你是一名营养分析助手。请根据食物图片（如果提供）和重量生成中文营养分析。"
-        "所有 nutrition 数值都必须按本次实际称重的食物总量计算，不是每 100g。"
-        "仅返回 JSON 对象，不要 markdown，不要额外解释。必须使用下面的精确字段名，"
-        "nutrition 里的值必须都是数字，未知也要估算或填 0。结构必须为："
+        "你是一名营养分析助手。必须遵守以下要求："
+        "1. 必须使用简体中文。"
+        "2. 仅返回 JSON 对象，不要英文，不要 markdown，不要额外解释。"
+        "3. 根据食物图片（如果提供）和重量生成营养分析。"
+        "4. 所有 nutrition 数值都必须按本次实际称重的食物总量计算，不是每 100g。"
+        "5. nutrition 里的值必须都是数字，未知也要估算或填 0。"
+        "6. 必须避开用户画像中的过敏原，不得推荐含过敏原的食物或搭配。"
+        "7. 必须结合用户画像中的慢病/情况和目标给出健康建议、菜品推荐和注意事项。"
+        "8. 如有糖尿病需关注 GI/GL 和碳水；如有高血压需关注钠/油盐；如有肾病需谨慎蛋白和钠；如有痛风需避免高嘌呤。"
+        "9. healthSuggestions 必须给出 2-4 条，dishSuggestions 必须给出 1-3 条，cautions 必须给出 1-3 条。"
+        "重量为 " +
+        String(latestWeightGrams, 1) +
+        " 克。用户画像 JSON：" + activeUserProfile +
+        "。最后，必须使用下面的精确 JSON 结构和字段名："
         "{\"foodType\":string,\"confidence\":number,\"nutrition\":{\"calories\":number,"
         "\"protein\":number,\"carbs\":number,\"fat\":number,\"fiber\":number,"
         "\"GI\":number,\"GL\":number},\"healthSuggestions\":string[],"
-        "\"dishSuggestions\":string[]}。重量为 " +
-        String(latestWeightGrams, 1) +
-        " 克。用户画像 JSON：" + activeUserProfile +
-        "。healthSuggestions 2-4 条，dishSuggestions 1-3 条。";
+        "\"dishSuggestions\":string[],\"cautions\":string[]}。";
 
     if (!hasImage)
     {
@@ -859,7 +909,7 @@ String analyzeWithAiApi()
 
     String payloadPrefix = "{\"model\":\"";
     String payloadSuffix =
-        "\",\"messages\":[{\"role\":\"system\",\"content\":\"你是一名营养分析助手，请用中文回答，并且仅输出有效 JSON。\"},{\"role\":\"user\",\"content\":";
+        "\",\"messages\":[{\"role\":\"system\",\"content\":\"你是一名营养分析助手。必须使用简体中文回答，并且仅输出有效 JSON 对象；不要英文，不要 markdown，不要解释。\"},{\"role\":\"user\",\"content\":";
     if (hasImage)
     {
         payloadSuffix += "[{\"type\":\"text\",\"text\":\"";
@@ -875,12 +925,12 @@ String analyzeWithAiApi()
         payloadSuffix += "\"";
     }
 
-    payloadSuffix += "}],\"response_format\":{\"type\":\"json_object\"},\"temperature\":0.2,\"max_tokens\":700}";
+    payloadSuffix += "}],\"reasoning\":{\"effort\":\"none\",\"exclude\":true},\"response_format\":{\"type\":\"json_object\"},\"temperature\":0.2,\"max_tokens\":700}";
 
-    for (int attempt = 1; attempt <= 3; attempt++)
+    for (int attempt = 1; attempt <= 2; attempt++)
     {
-        const char* model = attempt < 3 ? AI_MODEL : AI_BACKUP_MODEL;
-        String payload = payloadPrefix + String(model) + payloadSuffix;
+        String model = selectedAiModel;
+        String payload = payloadPrefix + model + payloadSuffix;
         WiFiClientSecure client;
         client.setInsecure();
 
@@ -939,18 +989,10 @@ String analyzeWithAiApi()
             response.indexOf("\"choices\"") < 0 &&
             response.indexOf("\"error\"") < 0;
 
-        if (attempt < 3 && emptySuccessfulResponse)
+        if (attempt < 2 && emptySuccessfulResponse)
         {
-            if (attempt == 1)
-            {
-                Serial.println(
-                    "Retrying primary OpenRouter model after empty successful response...");
-            }
-            else
-            {
-                Serial.println(
-                    "Primary model returned empty twice; trying backup OpenRouter model...");
-            }
+            Serial.println(
+                "Retrying selected OpenRouter model after empty successful response...");
             delay(700);
             continue;
         }
@@ -1097,6 +1139,58 @@ void handleLatestAnalysis()
     }
 
     server.send(200, "application/json", buildAnalysisResponseJson());
+}
+
+bool isAllowedAiModel(String model)
+{
+    return model == "mistralai/mistral-small-2603" ||
+           model == "mistralai/ministral-8b-2512" ||
+           model == "bytedance-seed/seed-1.6-flash" ||
+           model == "meta-llama/llama-4-scout";
+}
+
+String extractModelFromBody(String body)
+{
+    int key = body.indexOf("\"model\"");
+    if (key < 0)
+        return "";
+
+    int colon = body.indexOf(':', key);
+    int start = body.indexOf('"', colon + 1);
+    if (colon < 0 || start < 0)
+        return "";
+
+    int end = body.indexOf('"', start + 1);
+    if (end < 0)
+        return "";
+
+    return body.substring(start + 1, end);
+}
+
+void handleGetConfig()
+{
+    server.send(200, "application/json",
+                "{\"success\":true,\"data\":{\"model\":\"" +
+                    jsonEscape(selectedAiModel) + "\"}}");
+}
+
+void handlePostConfig()
+{
+    String body = server.arg("plain");
+    String model = extractModelFromBody(body);
+    if (!isAllowedAiModel(model))
+    {
+        server.send(400, "application/json",
+                    "{\"success\":false,\"error\":\"Invalid model\"}");
+        return;
+    }
+
+    selectedAiModel = model;
+    Serial.print("AI model selected: ");
+    Serial.println(selectedAiModel);
+    server.send(200, "application/json",
+                "{\"success\":true,\"data\":{\"model\":\"" +
+                    jsonEscape(selectedAiModel) + "\"}}");
 }
 
 void handleGetProfile()
