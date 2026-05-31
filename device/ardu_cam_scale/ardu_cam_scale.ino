@@ -89,36 +89,57 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>食物分析与营养追踪</title>
   <style>
-    body{margin:0;font-family:Arial,"Microsoft YaHei",sans-serif;background:#f5f7fb;color:#1f2937}
-    .container{max-width:960px;margin:0 auto;padding:24px}
-    .panel,.results{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:20px;margin-bottom:18px}
-    h1{margin:0 0 10px;font-size:28px}.muted{color:#64748b}.status{padding:12px;border-left:4px solid #16a34a;background:#ecfdf5;margin:16px 0}
-    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
-    label{font-size:13px;color:#475569}input,select{width:100%;box-sizing:border-box;margin-top:4px;padding:9px;border:1px solid #cbd5e1;border-radius:6px}
-    .checks{display:flex;gap:12px;flex-wrap:wrap}.checks label{display:flex;align-items:center;gap:5px}.checks input{width:auto;margin:0}
-    button,.btn{display:inline-block;border:0;border-radius:6px;padding:10px 14px;background:#2563eb;color:#fff;text-decoration:none;cursor:pointer}
-    .secondary{background:#475569}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}
-    .food{max-width:100%;border-radius:8px;border:1px solid #e5e7eb}.nutrition{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
-    .metric{border:1px solid #e5e7eb;border-radius:8px;padding:12px}.value{font-size:22px;font-weight:700}.metric-green{background:#ecfdf5;border-color:#86efac}.metric-yellow{background:#fffbeb;border-color:#fcd34d}.metric-red{background:#fef2f2;border-color:#fca5a5}.hidden{display:none}
+    :root{--bg:#f7f8fb;--panel:#fff;--text:#172033;--muted:#667085;--line:#e6e9ef;--primary:#2563eb;--primary-dark:#1d4ed8;--soft:#f1f5ff;--shadow:0 12px 34px rgba(15,23,42,.07)}
+    *{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,"Microsoft YaHei",sans-serif;background:linear-gradient(180deg,#eef3ff 0,#f7f8fb 320px);color:var(--text)}
+    .container{max-width:1080px;margin:0 auto;padding:28px 18px 44px}.topbar{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:18px}
+    .brand{display:flex;gap:12px;align-items:center}.logo{width:44px;height:44px;border-radius:8px;background:linear-gradient(135deg,#2563eb,#14b8a6);box-shadow:0 10px 22px rgba(37,99,235,.22)}
+    h1,h2,h3,p{margin-top:0}h1{margin-bottom:6px;font-size:30px;letter-spacing:0}h2{font-size:20px;margin-bottom:16px}h3{font-size:17px;margin:22px 0 10px}.muted{color:var(--muted);line-height:1.6}
+    .panel,.results{background:rgba(255,255,255,.92);border:1px solid rgba(230,233,239,.95);border-radius:8px;padding:22px;margin-bottom:18px;box-shadow:var(--shadow)}
+    .panel-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}.status{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid #bbf7d0;border-radius:8px;background:#f0fdf4;margin:16px 0}
+    .status-dot{width:10px;height:10px;border-radius:999px;background:#16a34a;box-shadow:0 0 0 5px rgba(22,163,74,.12);flex:0 0 auto}.status strong{display:block;margin-bottom:2px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}label{display:block;font-size:13px;font-weight:600;color:#48556a}
+    input,select{width:100%;margin-top:6px;padding:11px 12px;border:1px solid #d7dce5;border-radius:8px;background:#fff;color:var(--text);outline:none;transition:border-color .16s,box-shadow .16s}
+    input:focus,select:focus{border-color:#93b4ff;box-shadow:0 0 0 4px rgba(37,99,235,.1)}.checks{display:flex;gap:10px;flex-wrap:wrap}.checks label{display:flex;align-items:center;gap:7px;padding:8px 11px;border:1px solid var(--line);border-radius:999px;background:#fff;font-weight:500}.checks input{width:auto;margin:0}
+    button,.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:8px;padding:11px 16px;background:var(--primary);color:#fff;text-decoration:none;cursor:pointer;font-weight:700;box-shadow:0 8px 18px rgba(37,99,235,.18);transition:transform .12s,background .12s}
+    button:hover{background:var(--primary-dark);transform:translateY(-1px)}.secondary{background:#334155;box-shadow:0 8px 18px rgba(51,65,85,.14)}.secondary:hover{background:#1f2937}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+    .model-box{min-width:280px}.food{width:100%;max-height:420px;object-fit:contain;border-radius:8px;border:1px solid var(--line);background:#f8fafc}.result-hero{display:grid;grid-template-columns:minmax(220px,380px) 1fr;gap:22px;align-items:start}
+    .nutrition{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:12px;margin-top:16px}.metric{border:1px solid var(--line);border-radius:8px;padding:14px;min-height:92px}.value{font-size:24px;font-weight:800;line-height:1.1;margin-bottom:6px}
+    .metric-green{background:#ecfdf5;border-color:#86efac}.metric-yellow{background:#fffbeb;border-color:#fcd34d}.metric-red{background:#fef2f2;border-color:#fca5a5}.hidden{display:none}
+    ul{padding-left:20px;line-height:1.7}.section-label{margin:18px 0 9px;font-weight:800}.pill{display:inline-flex;align-items:center;border:1px solid var(--line);background:var(--soft);border-radius:999px;padding:7px 10px;color:#31528f;font-size:13px;font-weight:700}
+    .advice-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:20px}.advice-card{border-radius:8px;border:1px solid;padding:16px}.advice-card h3{margin:0 0 10px}.advice-card ul{margin-bottom:0}.advice-caution{background:#fff1f2;border-color:#fecdd3}.advice-health{background:#ecfdf5;border-color:#bbf7d0}.advice-dishes{background:#eff6ff;border-color:#bfdbfe}
+    @media(max-width:760px){.topbar,.panel-head,.result-hero{display:block}.model-box{min-width:0;margin-top:14px}.container{padding:18px 12px 34px}.panel,.results{padding:18px}h1{font-size:26px}}
   </style>
 </head>
 <body>
   <main class="container">
-    <section class="panel">
-      <h1>食物分析系统</h1>
-      <p class="muted">页面和 API 现在由 Arduino Nano ESP32 直接提供。把食物放在秤上，设备会拍照并更新结果。</p>
-      <div class="status"><strong id="statusText">系统已就绪 - 等待设备数据</strong><div id="lastUpdate" class="muted"></div></div>
-      <div class="actions">
-        <button onclick="manualCapture()">手动拍照</button>
-        <button class="secondary" onclick="tareScale()">校准秤</button>
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>
+          <h1>NutriVision</h1>
+          <p class="muted">食物识别、称重与营养建议，由设备本地网页直接呈现。</p>
+        </div>
       </div>
-      <div class="grid" style="margin-top:14px">
-        <div><label>AI 模型<select id="aiModelSelect" onchange="saveAiModel()">
+      <span class="pill">nutrivision.local</span>
+    </div>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>设备状态</h2>
+          <p class="muted">把食物放在秤上，设备会自动拍照并刷新分析结果。</p>
+        </div>
+        <div class="model-box"><label>AI 模型<select id="aiModelSelect" onchange="saveAiModel()">
           <option value="mistralai/mistral-small-2603">mistralai/mistral-small-2603</option>
           <option value="mistralai/ministral-8b-2512">mistralai/ministral-8b-2512</option>
           <option value="bytedance-seed/seed-1.6-flash" selected>bytedance-seed/seed-1.6-flash</option>
           <option value="meta-llama/llama-4-scout">meta-llama/llama-4-scout</option>
         </select></label></div>
+      </div>
+      <div class="status"><span class="status-dot"></span><div><strong id="statusText">系统已就绪 - 等待设备数据</strong><div id="lastUpdate" class="muted"></div></div></div>
+      <div class="actions">
+        <button onclick="manualCapture()">手动拍照</button>
+        <button class="secondary" onclick="tareScale()">校准秤</button>
       </div>
     </section>
 
@@ -131,9 +152,9 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         <div><label>体重（kg）<input id="profileWeightKg" type="number" min="0" max="300" step="0.1"></label></div>
         <div><label>过敏原（逗号分隔）<input id="profileAllergens" type="text"></label></div>
       </div>
-      <p>目标</p>
+      <p class="section-label">目标</p>
       <div class="checks"><label><input id="goalFatLoss" type="checkbox">减脂</label><label><input id="goalMuscleGain" type="checkbox">增肌</label></div>
-      <p>慢病/情况</p>
+      <p class="section-label">慢病/情况</p>
       <div class="checks"><label><input id="condDiabetes" type="checkbox">糖尿病</label><label><input id="condHypertension" type="checkbox">高血压</label><label><input id="condKidney" type="checkbox">肾病</label><label><input id="condGout" type="checkbox">痛风</label><label><input id="condAllergy" type="checkbox">过敏</label></div>
       <div class="actions"><button onclick="saveProfile()">保存画像</button><span id="profileStatus" class="muted"></span></div>
     </section>
@@ -147,7 +168,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     async function saveProfile(){try{const p=profileFromForm();localStorage.setItem('nutrivision.userProfile.v1',JSON.stringify(p));const r=await fetch('/api/profile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});$('profileStatus').textContent=r.ok?'已保存':'保存失败'}catch(e){$('profileStatus').textContent='保存失败'}}
     function metric(label,value,level){return `<div class="metric metric-${level||'green'}"><div class="value">${value}</div><div>${label}</div></div>`}
     function risk(metricName,value){const v=Number(value)||0;if(metricName==='energy')return v<2500?'green':v<=3300?'yellow':'red';if(metricName==='protein')return v>=10&&v<=35?'green':v<=50?'yellow':'red';if(metricName==='carbs')return v<60?'green':v<=90?'yellow':'red';if(metricName==='fat')return v<25?'green':v<=35?'yellow':'red';if(metricName==='fiber')return v>=5?'green':v>=2?'yellow':'red';if(metricName==='gi')return v<55?'green':v<70?'yellow':'red';if(metricName==='gl')return v<10?'green':v<20?'yellow':'red';return 'green'}
-    function render(d){if(!d.success){$('statusText').textContent=d.status==='ready'?'设备就绪':'系统已就绪 - 等待设备数据';$('lastUpdate').textContent=d.error||'等待下一次称重';$('results').classList.add('hidden');$('results').innerHTML='';return}const x=d.data;if(x.status==='processing'){$('statusText').textContent='查询中……';$('lastUpdate').textContent='已拍照，正在分析营养建议';$('results').classList.remove('hidden');$('results').innerHTML=`<h2>查询中……</h2><img class="food" src="${x.image.path}" alt="食物图片"><p><strong>重量：</strong>${x.weight}g</p><p>正在生成营养分析，请稍候。</p>`;return}const a=x.analysis,n=a.nutrition;const kj=Math.round((Number(n.calories)||0)*4.184);const cautions=Array.isArray(a.cautions)?a.cautions:[];$('statusText').textContent='分析完成';$('lastUpdate').textContent='设备运行时间：'+Math.round(x.timestampMs/1000)+' 秒';$('results').classList.remove('hidden');$('results').innerHTML=`<h2>食物分析结果</h2><img class="food" src="${x.image.path}" alt="食物图片"><p><strong>重量：</strong>${x.weight}g</p><p><strong>食物类型：</strong>${a.foodType}</p><p class="muted">以下营养数据已按本次实际称重 ${x.weight}g 估算，不是每 100g 数据。颜色按普通成人每日三餐的单餐参考阈值估算。</p><div class="nutrition">${metric('食物热量',kj+' kJ',risk('energy',kj))}${metric('蛋白质',n.protein+'g',risk('protein',n.protein))}${metric('碳水',n.carbs+'g',risk('carbs',n.carbs))}${metric('脂肪',n.fat+'g',risk('fat',n.fat))}${metric('膳食纤维',n.fiber+'g',risk('fiber',n.fiber))}${metric('GI',n.GI,risk('gi',n.GI))}${metric('GL',n.GL,risk('gl',n.GL))}</div><h3>注意事项</h3><ul>${(cautions.length?cautions:['请结合个人过敏原、慢病情况和医生建议判断是否适合食用。']).map(s=>`<li>${s}</li>`).join('')}</ul><h3>健康建议</h3><ul>${a.healthSuggestions.map(s=>`<li>${s}</li>`).join('')}</ul><h3>菜品推荐</h3><ul>${a.dishSuggestions.map(s=>`<li>${s}</li>`).join('')}</ul>`}
+    function render(d){if(!d.success){$('statusText').textContent=d.status==='ready'?'设备就绪':'系统已就绪 - 等待设备数据';$('lastUpdate').textContent=d.error||'等待下一次称重';$('results').classList.add('hidden');$('results').innerHTML='';return}const x=d.data;if(x.status==='processing'){$('statusText').textContent='查询中……';$('lastUpdate').textContent='已拍照，正在分析营养建议';$('results').classList.remove('hidden');$('results').innerHTML=`<div class="result-hero"><img class="food" src="${x.image.path}" alt="食物图片"><div><span class="pill">查询中</span><h2>正在生成营养分析</h2><p><strong>重量：</strong>${x.weight}g</p><p class="muted">图片已完成采集，AI 正在结合称重数据和用户画像生成建议。</p></div></div>`;return}const a=x.analysis,n=a.nutrition;const kj=Math.round((Number(n.calories)||0)*4.184);const cautions=Array.isArray(a.cautions)?a.cautions:[];$('statusText').textContent='分析完成';$('lastUpdate').textContent='设备运行时间：'+Math.round(x.timestampMs/1000)+' 秒';$('results').classList.remove('hidden');$('results').innerHTML=`<div class="result-hero"><img class="food" src="${x.image.path}" alt="食物图片"><div><span class="pill">分析完成</span><h2>${a.foodType}</h2><p><strong>重量：</strong>${x.weight}g</p><p class="muted">以下营养数据已按本次实际称重 ${x.weight}g 估算，不是每 100g 数据。颜色按普通成人每日三餐的单餐参考阈值估算。</p><div class="nutrition">${metric('食物热量',kj+' kJ',risk('energy',kj))}${metric('蛋白质',n.protein+'g',risk('protein',n.protein))}${metric('碳水',n.carbs+'g',risk('carbs',n.carbs))}${metric('脂肪',n.fat+'g',risk('fat',n.fat))}${metric('膳食纤维',n.fiber+'g',risk('fiber',n.fiber))}${metric('GI',n.GI,risk('gi',n.GI))}${metric('GL',n.GL,risk('gl',n.GL))}</div></div></div><div class="advice-grid"><section class="advice-card advice-caution"><h3>注意事项</h3><ul>${(cautions.length?cautions:['请结合个人过敏原、慢病情况和医生建议判断是否适合食用。']).map(s=>`<li>${s}</li>`).join('')}</ul></section><section class="advice-card advice-health"><h3>健康建议</h3><ul>${a.healthSuggestions.map(s=>`<li>${s}</li>`).join('')}</ul></section><section class="advice-card advice-dishes"><h3>菜品推荐</h3><ul>${a.dishSuggestions.map(s=>`<li>${s}</li>`).join('')}</ul></section></div>`}
     async function refreshData(){try{const r=await fetch('/api/latest-analysis?t='+Date.now());render(await r.json())}catch(e){$('statusText').textContent='连接异常 - 请检查设备'}}
     async function manualCapture(){try{$('statusText').textContent='正在拍照...';const r=await fetch('/capture?json=1&t='+Date.now());render(await r.json())}catch(e){$('statusText').textContent='拍照失败 - 请检查设备'}}
     async function tareScale(){try{$('statusText').textContent='正在校准秤...';const r=await fetch('/api/tare',{method:'POST'});const j=await r.json();$('statusText').textContent=j.success?'设备就绪':'校准失败';$('lastUpdate').textContent=j.success?'秤已归零，请放置食物':'请检查设备连接'}catch(e){$('statusText').textContent='校准失败'}}
