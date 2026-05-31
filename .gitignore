@@ -16,6 +16,7 @@ server/uploads/
 .env.production
 credentials.json
 secrets.json
+device/ardu_cam_scale/secrets.h
 
 # Logs
 logs/

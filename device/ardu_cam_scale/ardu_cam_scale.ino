@@ -7,6 +7,7 @@
 #include <WiFiClientSecure.h>
 #include <ESPmDNS.h>
 #include "mbedtls/base64.h"
+#include "secrets.h"
 
 // ArduCam library - you'll need to install this from Library Manager
 #include "ArduCAM.h"
@@ -36,7 +37,6 @@ WebServer server(80);
 
 // State tracking
 bool                weightDetected       = false;
-unsigned long       lastWeightCheck      = 0;
 const size_t        LOCAL_IMAGE_MAX_BYTES = 180 * 1024;
 const float         AUTO_CAPTURE_THRESHOLD_GRAMS = 50.0;
 const float         WEIGHT_REMOVED_THRESHOLD_GRAMS = 20.0;
@@ -56,8 +56,6 @@ const char*         AI_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 const char*         AI_MODEL   = "mistralai/mistral-small-2603";
 const char*         AI_BACKUP_MODEL =
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free";
-const char* AI_API_KEY =
-    "REDACTED_OPENROUTER_API_KEY";
 
 uint8_t*      latestImage       = nullptr;
 size_t        latestImageSize   = 0;
@@ -964,6 +962,92 @@ String analyzeWithAiApi()
     return buildFallbackAnalysisObjectJson("OpenRouter 分析重试失败。");
 }
 
+void resetWeightSamples()
+{
+    weightSampleIndex = 0;
+    weightSampleCount = 0;
+    lastWeightSampleMs = 0;
+}
+
+void addWeightSample(float weight)
+{
+    weightSamples[weightSampleIndex] = weight;
+    weightSampleIndex = (weightSampleIndex + 1) % STABLE_SAMPLE_COUNT;
+    if (weightSampleCount < STABLE_SAMPLE_COUNT)
+        weightSampleCount++;
+}
+
+float averageWeightSamples()
+{
+    if (weightSampleCount == 0)
+        return 0;
+
+    float total = 0;
+    for (size_t i = 0; i < weightSampleCount; i++)
+    {
+        total += weightSamples[i];
+    }
+    return total / weightSampleCount;
+}
+
+float weightSampleRange()
+{
+    if (weightSampleCount == 0)
+        return 0;
+
+    float minWeight = weightSamples[0];
+    float maxWeight = weightSamples[0];
+    for (size_t i = 1; i < weightSampleCount; i++)
+    {
+        minWeight = min(minWeight, weightSamples[i]);
+        maxWeight = max(maxWeight, weightSamples[i]);
+    }
+    return maxWeight - minWeight;
+}
+
+bool hasStableWeight()
+{
+    if (weightSampleCount < STABLE_SAMPLE_COUNT)
+        return false;
+
+    return weightSampleRange() <= STABLE_WEIGHT_RANGE_GRAMS &&
+           averageWeightSamples() > AUTO_CAPTURE_THRESHOLD_GRAMS;
+}
+
+void beginSettling(float currentWeight, unsigned long now)
+{
+    Serial.println("Weight detected, waiting for stable reading...");
+    deviceState = "settling";
+    weightDetected = true;
+    settlingStartedMs = now;
+    removalStartedMs = 0;
+    resetWeightSamples();
+    addWeightSample(currentWeight);
+    lastWeightSampleMs = now;
+}
+
+void captureStableWeight(float currentWeight, bool forced)
+{
+    float stableWeight =
+        weightSampleCount > 0 ? averageWeightSamples() : currentWeight;
+
+    Serial.print(forced ? "Max settle wait reached, using weight: "
+                        : "Stable weight detected: ");
+    Serial.print(stableWeight);
+    Serial.println("g, capturing image...");
+
+    if (captureAndStoreImage(stableWeight))
+    {
+        Serial.println("Image captured and published locally!");
+    }
+    else
+    {
+        Serial.println("Failed to capture image");
+        deviceState = "ready";
+        weightDetected = false;
+    }
+}
+
 void processPendingAnalysis()
 {
     if (!pendingAiAnalysis || millis() < pendingAiStartMs)
@@ -983,6 +1067,9 @@ void resetForNextItem()
     latestWeightGrams = 0;
     latestCaptureMs = 0;
     deviceState = "ready";
+    removalStartedMs = 0;
+    settlingStartedMs = 0;
+    resetWeightSamples();
 
     if (latestImage != nullptr)
     {
@@ -1157,43 +1244,78 @@ void loop()
         }
     }
 
-    // Serial.println("scale.read() = " + String(scale.read()));
-    // Serial.println("scale.get_units() = " + String(scale.get_units()));
-    //  If weight is heavier than the threshold, capture an image and publish it
-    //  through the ESP32-hosted web API.
-
     float         currentWeight = scale.get_units();
     unsigned long currentTime   = millis();
 
-    // Check if weight exceeds threshold and debounce to prevent multiple
-    // uploads
-    if (currentWeight > AUTO_CAPTURE_THRESHOLD_GRAMS && !weightDetected &&
-        !pendingAiAnalysis && deviceState != "processing" &&
-        (currentTime - lastWeightCheck > WEIGHT_DEBOUNCE_TIME))
+    if (deviceState == "ready" &&
+        currentWeight > AUTO_CAPTURE_THRESHOLD_GRAMS)
     {
-        Serial.println("Weight exceeded threshold: " + String(currentWeight) +
-                       "g, capturing image...");
+        beginSettling(currentWeight, currentTime);
+    }
 
-        if (captureAndStoreImage(currentWeight))
+    if (deviceState == "settling")
+    {
+        if (currentWeight < WEIGHT_REMOVED_THRESHOLD_GRAMS)
         {
-            weightDetected  = true;
-            lastWeightCheck = currentTime;
-            Serial.println("Image captured and published locally!");
+            if (removalStartedMs == 0)
+                removalStartedMs = currentTime;
+
+            if (currentTime - removalStartedMs >= REMOVED_HOLD_MS)
+            {
+                Serial.println("Weight removed during settling");
+                weightDetected = false;
+                resetForNextItem();
+            }
         }
         else
         {
-            Serial.println("Failed to capture image");
-            lastWeightCheck = currentTime; // Still update to prevent spam
+            removalStartedMs = 0;
+        }
+
+        if (deviceState == "settling" &&
+            currentTime - lastWeightSampleMs >= WEIGHT_SAMPLE_INTERVAL_MS)
+        {
+            addWeightSample(currentWeight);
+            lastWeightSampleMs = currentTime;
+
+            Serial.print("Settling weight avg/range/samples: ");
+            Serial.print(averageWeightSamples());
+            Serial.print("g / ");
+            Serial.print(weightSampleRange());
+            Serial.print("g / ");
+            Serial.println(weightSampleCount);
+        }
+
+        bool minSettleElapsed = currentTime - settlingStartedMs >= SETTLE_MIN_MS;
+        bool maxSettleElapsed = currentTime - settlingStartedMs >= SETTLE_MAX_MS;
+
+        if (deviceState == "settling" && minSettleElapsed && hasStableWeight())
+        {
+            captureStableWeight(currentWeight, false);
+        }
+        else if (deviceState == "settling" && maxSettleElapsed)
+        {
+            captureStableWeight(currentWeight, true);
         }
     }
 
-    // Reset weight detection when weight drops below threshold
-    if (currentWeight < WEIGHT_REMOVED_THRESHOLD_GRAMS && weightDetected)
+    if ((deviceState == "processing" || deviceState == "complete") &&
+        currentWeight < WEIGHT_REMOVED_THRESHOLD_GRAMS)
     {
-        Serial.println("Weight removed, ready for next detection");
-        weightDetected = false;
-        resetForNextItem();
+        if (removalStartedMs == 0)
+            removalStartedMs = currentTime;
+
+        if (currentTime - removalStartedMs >= REMOVED_HOLD_MS)
+        {
+            Serial.println("Weight removed, ready for next detection");
+            weightDetected = false;
+            resetForNextItem();
+        }
+    }
+    else if (deviceState == "processing" || deviceState == "complete")
+    {
+        removalStartedMs = 0;
     }
 
-    delay(500);
+    delay(50);
 }
