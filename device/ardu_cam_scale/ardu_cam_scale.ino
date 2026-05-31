@@ -771,11 +771,65 @@ String extractContentFromAiApi(String response)
 
 String extractJsonObject(String text)
 {
-    int start = text.indexOf('{');
-    int end = text.lastIndexOf('}');
-    if (start < 0 || end <= start)
+    int field = text.indexOf("\"foodType\"");
+    if (field < 0)
+        field = text.indexOf("'foodType'");
+
+    int start = -1;
+    if (field >= 0)
+    {
+        for (int i = field; i >= 0; i--)
+        {
+            if (text[i] == '{')
+            {
+                start = i;
+                break;
+            }
+        }
+    }
+
+    if (start < 0)
+        start = text.indexOf('{');
+
+    if (start < 0)
         return "";
-    return text.substring(start, end + 1);
+
+    bool inString = false;
+    bool escaping = false;
+    char stringQuote = 0;
+    int depth = 0;
+    for (int i = start; i < text.length(); i++)
+    {
+        char c = text[i];
+        if (inString)
+        {
+            if (escaping)
+                escaping = false;
+            else if (c == '\\')
+                escaping = true;
+            else if (c == stringQuote)
+                inString = false;
+            continue;
+        }
+
+        if (c == '"' || c == '\'')
+        {
+            inString = true;
+            stringQuote = c;
+        }
+        else if (c == '{')
+        {
+            depth++;
+        }
+        else if (c == '}')
+        {
+            depth--;
+            if (depth == 0)
+                return text.substring(start, i + 1);
+        }
+    }
+
+    return "";
 }
 
 String debugVisibleText(String text, size_t maxChars)
@@ -881,6 +935,38 @@ void logAiUnparseableContent(String content, String response)
     }
 }
 
+void logAiParseDebug(String content, String analysis, String response)
+{
+    Serial.print("OpenRouter parse debug content length: ");
+    Serial.println(content.length());
+    Serial.print("OpenRouter parse debug analysis length: ");
+    Serial.println(analysis.length());
+    Serial.print("OpenRouter parse debug content indexes foodType/{/}: ");
+    Serial.print(content.indexOf("\"foodType\""));
+    Serial.print("/");
+    Serial.print(content.indexOf('{'));
+    Serial.print("/");
+    Serial.println(content.lastIndexOf('}'));
+    Serial.print("OpenRouter parse debug response indexes foodType/reasoning/content: ");
+    Serial.print(response.indexOf("\"foodType\""));
+    Serial.print("/");
+    Serial.print(response.indexOf("\"reasoning\""));
+    Serial.print("/");
+    Serial.println(response.indexOf("\"content\""));
+    if (content.length() > 0)
+    {
+        Serial.print("OpenRouter parse debug content visible preview: [");
+        Serial.print(debugVisibleText(content, AI_CONTENT_LOG_MAX_CHARS));
+        Serial.println("]");
+    }
+    if (analysis.length() > 0)
+    {
+        Serial.print("OpenRouter parse debug extracted JSON preview: [");
+        Serial.print(debugVisibleText(analysis, AI_CONTENT_LOG_MAX_CHARS));
+        Serial.println("]");
+    }
+}
+
 String analyzeWithAiApi()
 {
     if (WiFi.status() != WL_CONNECTED)
@@ -949,81 +1035,71 @@ String analyzeWithAiApi()
 
     payloadSuffix += "}],\"reasoning\":{\"effort\":\"none\",\"exclude\":true},\"response_format\":{\"type\":\"json_object\"},\"temperature\":0.2,\"max_tokens\":700}";
 
-    for (int attempt = 1; attempt <= 2; attempt++)
+    String model = selectedAiModel;
+    String payload = payloadPrefix + model + payloadSuffix;
+    WiFiClientSecure client;
+    client.setInsecure();
+
+    HTTPClient http;
+    http.setTimeout(60000);
+    if (!http.begin(client, AI_API_URL))
     {
-        String model = selectedAiModel;
-        String payload = payloadPrefix + model + payloadSuffix;
-        WiFiClientSecure client;
-        client.setInsecure();
-
-        HTTPClient http;
-        http.setTimeout(60000);
-        if (!http.begin(client, AI_API_URL))
-        {
-            return buildFallbackAnalysisObjectJson(
-                "无法初始化 OpenRouter HTTPS 请求。");
-        }
-
-        http.addHeader("Authorization", "Bearer " + String(AI_API_KEY));
-        http.addHeader("Content-Type", "application/json");
-        http.addHeader("HTTP-Referer", "http://" + WiFi.localIP().toString());
-        http.addHeader("X-Title", "NutriVision ESP32");
-        http.addHeader("Connection", "close");
-
-        Serial.print("Calling OpenRouter for nutrition analysis, attempt ");
-        Serial.println(attempt);
-        Serial.print("OpenRouter model: ");
-        Serial.println(model);
-        Serial.print("OpenRouter payload length: ");
-        Serial.println(payload.length());
-        Serial.print("OpenRouter image included: ");
-        Serial.println(hasImage ? "yes" : "no");
-
-        int status = http.POST(payload);
-        String response = http.getString();
-        http.end();
-        logAiResponseDebug(status, response);
-
-        if (status < 200 || status >= 300)
-        {
-            logAiErrorResponse(status, response);
-            return buildFallbackAnalysisObjectJson("OpenRouter HTTP 状态码：" +
-                                                   String(status));
-        }
-
-        String content = extractContentFromAiApi(response);
-        Serial.print("OpenRouter content length: ");
-        Serial.println(content.length());
-        String analysis = extractJsonObject(content);
-        Serial.print("OpenRouter extracted analysis length: ");
-        Serial.println(analysis.length());
-        if (analysis.length() > 0)
-        {
-            Serial.println("OpenRouter analysis completed");
-            return analysis;
-        }
-
-        Serial.println("OpenRouter returned no parseable JSON analysis");
-        logAiUnparseableContent(content, response);
-
-        bool emptySuccessfulResponse =
-            status >= 200 && status < 300 && content.length() == 0 &&
-            response.indexOf("\"choices\"") < 0 &&
-            response.indexOf("\"error\"") < 0;
-
-        if (attempt < 2 && emptySuccessfulResponse)
-        {
-            Serial.println(
-                "Retrying selected OpenRouter model after empty successful response...");
-            delay(700);
-            continue;
-        }
-
         return buildFallbackAnalysisObjectJson(
-            "OpenRouter 返回内容无法解析为 JSON。");
+            "无法初始化 OpenRouter HTTPS 请求。");
     }
 
-    return buildFallbackAnalysisObjectJson("OpenRouter 分析重试失败。");
+    http.addHeader("Authorization", "Bearer " + String(AI_API_KEY));
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("HTTP-Referer", "http://" + WiFi.localIP().toString());
+    http.addHeader("X-Title", "NutriVision ESP32");
+    http.addHeader("Connection", "close");
+
+    Serial.println("Calling OpenRouter for nutrition analysis");
+    Serial.print("OpenRouter model: ");
+    Serial.println(model);
+    Serial.print("OpenRouter payload length: ");
+    Serial.println(payload.length());
+    Serial.print("OpenRouter image included: ");
+    Serial.println(hasImage ? "yes" : "no");
+
+    int status = http.POST(payload);
+    String response = http.getString();
+    http.end();
+    logAiResponseDebug(status, response);
+
+    if (status < 200 || status >= 300)
+    {
+        logAiErrorResponse(status, response);
+        return buildFallbackAnalysisObjectJson("OpenRouter HTTP 状态码：" +
+                                               String(status));
+    }
+
+    String content = extractContentFromAiApi(response);
+    String analysis = extractJsonObject(content);
+
+    if (analysis.length() == 0 && content.length() == 0)
+    {
+        String directAnalysis = extractJsonObject(response);
+        if (response.indexOf("\"choices\"") < 0 &&
+            directAnalysis.indexOf("\"foodType\"") >= 0)
+        {
+            Serial.println(
+                "OpenRouter parse debug using direct response JSON fallback");
+            analysis = directAnalysis;
+        }
+    }
+
+    logAiParseDebug(content, analysis, response);
+    if (analysis.length() > 0 && analysis.indexOf("\"foodType\"") >= 0)
+    {
+        Serial.println("OpenRouter analysis completed");
+        return analysis;
+    }
+
+    Serial.println("OpenRouter returned no parseable JSON analysis");
+    logAiUnparseableContent(content, response);
+    return buildFallbackAnalysisObjectJson(
+        "OpenRouter 返回内容无法解析为 JSON。");
 }
 
 void resetWeightSamples()
