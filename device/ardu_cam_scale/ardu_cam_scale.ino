@@ -2,7 +2,6 @@
 #include <SPI.h>
 #include <WiFi.h>
 #include <WebServer.h>
-#include <HTTPClient.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
 #include <ESPmDNS.h>
@@ -49,12 +48,10 @@ const unsigned long REMOVED_HOLD_MS = 1500;
 const float         STABLE_WEIGHT_RANGE_GRAMS = 5.0;
 const size_t        STABLE_SAMPLE_COUNT = 8;
 const size_t        LLM_IMAGE_MAX_BYTES = 60 * 1024;
-const size_t        AI_ERROR_LOG_MAX_CHARS = 700;
-const size_t        AI_CONTENT_LOG_MAX_CHARS = 700;
-const size_t        AI_RESPONSE_LOG_MAX_CHARS = 1200;
 const unsigned long AI_REQUEST_COOLDOWN_MS = 0;
 const unsigned long AI_START_DELAY_MS = 2000;
-const char*         AI_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const char*         AI_API_HOST = "openrouter.ai";
+const char*         AI_API_PATH = "/api/v1/chat/completions";
 const char*         AI_MODEL   = "bytedance-seed/seed-1.6-flash";
 
 String selectedAiModel = AI_MODEL;
@@ -80,6 +77,15 @@ String        activeUserProfile =
     "\"allergens\":[],\"goals\":{\"fatLoss\":false,\"muscleGain\":false},"
     "\"conditions\":{\"diabetes\":false,\"hypertension\":false,"
     "\"kidneyDisease\":false,\"gout\":false,\"allergy\":false}}";
+
+struct AiHttpResponse
+{
+    int    status;
+    String statusLine;
+    String headers;
+    String rawBody;
+    String body;
+};
 
 const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <!doctype html>
@@ -328,102 +334,6 @@ void setupWebServer()
 
 // ***************************************************************************
 // Helper functions
-
-void captureImage()
-{
-    Serial.println("Capturing image...");
-
-    myCAM.flush_fifo();
-    myCAM.clear_fifo_flag();
-    myCAM.start_capture();
-
-    // Wait for capture to complete
-    while (!myCAM.get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK))
-        ;
-
-    uint32_t length = myCAM.read_fifo_length();
-    Serial.print("Image size: ");
-    Serial.print(length);
-    Serial.println(" bytes");
-
-    if (length >= MAX_FIFO_SIZE)
-    {
-        Serial.println("Over size.");
-        return;
-    }
-
-    if (length == 0)
-    {
-        Serial.println("Size is 0.");
-        return;
-    }
-
-    // Read and output image data
-    myCAM.CS_LOW();
-    myCAM.set_fifo_burst();
-
-    Serial.println("--- IMAGE DATA START ---");
-
-    // Use bulk SPI transfer for better performance
-    const size_t chunkSize = 128;
-    uint8_t      buffer[chunkSize];
-    uint32_t     bytesRemaining = length;
-
-    while (bytesRemaining > 0)
-    {
-        size_t bytesToRead = min(chunkSize, bytesRemaining);
-
-        // Fill buffer with zeros for SPI transfer
-        memset(buffer, 0x00, bytesToRead);
-
-        // Bulk SPI transfer
-        SPI.transfer(buffer, bytesToRead);
-
-        // Print data as hex
-        for (size_t i = 0; i < bytesToRead; i++)
-        {
-            if (buffer[i] < 16)
-                Serial.print("0");
-            Serial.print(buffer[i], HEX);
-            Serial.print(" ");
-
-            // Check for JPEG end marker
-            if (i > 0 && buffer[i] == 0xD9 && buffer[i - 1] == 0xFF)
-            {
-                Serial.println();
-                goto jpeg_end;
-            }
-        }
-
-        bytesRemaining -= bytesToRead;
-    }
-
-jpeg_end:
-
-    myCAM.CS_HIGH();
-    Serial.println("\n--- IMAGE DATA END ---");
-
-    myCAM.clear_fifo_flag();
-}
-
-void streamImages()
-{
-    Serial.println("Starting stream mode (press any key to stop)...");
-
-    while (!Serial.available())
-    {
-        captureImage();
-        delay(1000); // 1 second between captures
-    }
-
-    // Clear the serial buffer
-    while (Serial.available())
-    {
-        Serial.read();
-    }
-
-    Serial.println("Stream stopped.");
-}
 
 void handleRoot()
 {
@@ -835,7 +745,7 @@ String extractJsonObject(String text)
 String debugVisibleText(String text, size_t maxChars)
 {
     String output = "";
-    size_t limit = min(maxChars, text.length());
+    size_t limit = maxChars == 0 ? text.length() : min(maxChars, text.length());
     for (size_t i = 0; i < limit; i++)
     {
         char c = text[i];
@@ -856,10 +766,149 @@ String debugVisibleText(String text, size_t maxChars)
             output += c;
     }
 
-    if (text.length() > maxChars)
-        output += "...<truncated>";
-
     return output;
+}
+
+bool headerContains(String headers, const char* needle)
+{
+    String lowerHeaders = headers;
+    String lowerNeedle = needle;
+    lowerHeaders.toLowerCase();
+    lowerNeedle.toLowerCase();
+    return lowerHeaders.indexOf(lowerNeedle) >= 0;
+}
+
+String decodeChunkedBody(String rawBody)
+{
+    String decoded = "";
+    int pos = 0;
+    while (pos < rawBody.length())
+    {
+        int lineEnd = rawBody.indexOf("\r\n", pos);
+        if (lineEnd < 0)
+            break;
+
+        String chunkSizeText = rawBody.substring(pos, lineEnd);
+        int extension = chunkSizeText.indexOf(';');
+        if (extension >= 0)
+            chunkSizeText = chunkSizeText.substring(0, extension);
+        chunkSizeText.trim();
+
+        char* endPtr = nullptr;
+        unsigned long chunkSize = strtoul(chunkSizeText.c_str(), &endPtr, 16);
+        if (endPtr == chunkSizeText.c_str())
+            break;
+
+        pos = lineEnd + 2;
+        if (chunkSize == 0)
+            break;
+        if (pos + chunkSize > rawBody.length())
+            break;
+
+        decoded += rawBody.substring(pos, pos + chunkSize);
+        pos += chunkSize + 2;
+    }
+
+    return decoded;
+}
+
+void logRawHttpDebug(AiHttpResponse response)
+{
+    Serial.print("OpenRouter raw HTTP status line: [");
+    Serial.print(debugVisibleText(response.statusLine, 0));
+    Serial.println("]");
+    Serial.print("OpenRouter raw HTTP headers: [");
+    Serial.print(debugVisibleText(response.headers, 0));
+    Serial.println("]");
+    Serial.print("OpenRouter raw HTTP body length: ");
+    Serial.println(response.rawBody.length());
+    Serial.print("OpenRouter raw HTTP body: [");
+    Serial.print(debugVisibleText(response.rawBody, 0));
+    Serial.println("]");
+    Serial.print("OpenRouter decoded HTTP body length: ");
+    Serial.println(response.body.length());
+    Serial.print("OpenRouter decoded HTTP body: [");
+    Serial.print(debugVisibleText(response.body, 0));
+    Serial.println("]");
+}
+
+AiHttpResponse postOpenRouterRaw(String payload)
+{
+    AiHttpResponse response;
+    response.status = -1;
+
+    WiFiClientSecure client;
+    client.setInsecure();
+    client.setTimeout(60000);
+
+    Serial.println("OpenRouter raw HTTP connecting...");
+    if (!client.connect(AI_API_HOST, 443))
+    {
+        response.statusLine = "TLS connection failed";
+        return response;
+    }
+
+    client.print("POST ");
+    client.print(AI_API_PATH);
+    client.println(" HTTP/1.1");
+    client.print("Host: ");
+    client.println(AI_API_HOST);
+    client.print("Authorization: Bearer ");
+    client.println(AI_API_KEY);
+    client.println("Content-Type: application/json");
+    client.println("Accept: application/json");
+    client.println("Accept-Encoding: identity");
+    client.print("HTTP-Referer: http://");
+    client.println(WiFi.localIP().toString());
+    client.println("X-Title: NutriVision ESP32");
+    client.println("Connection: close");
+    client.print("Content-Length: ");
+    client.println(payload.length());
+    client.println();
+    client.print(payload);
+
+    unsigned long deadline = millis() + 70000;
+    while (!client.available() && client.connected() && millis() < deadline)
+        delay(10);
+
+    if (!client.available())
+    {
+        response.statusLine = "No response before timeout";
+        client.stop();
+        return response;
+    }
+
+    response.statusLine = client.readStringUntil('\n');
+    response.statusLine.trim();
+    int firstSpace = response.statusLine.indexOf(' ');
+    if (firstSpace >= 0 && firstSpace + 3 < response.statusLine.length())
+        response.status =
+            response.statusLine.substring(firstSpace + 1, firstSpace + 4)
+                .toInt();
+
+    while (client.connected() && millis() < deadline)
+    {
+        String line = client.readStringUntil('\n');
+        if (line == "\r" || line.length() == 0)
+            break;
+        response.headers += line;
+    }
+
+    while ((client.connected() || client.available()) && millis() < deadline)
+    {
+        while (client.available())
+            response.rawBody += (char)client.read();
+        delay(1);
+    }
+    client.stop();
+
+    if (headerContains(response.headers, "transfer-encoding: chunked"))
+        response.body = decodeChunkedBody(response.rawBody);
+    else
+        response.body = response.rawBody;
+
+    logRawHttpDebug(response);
+    return response;
 }
 
 void logAiResponseDebug(int status, String response)
@@ -869,7 +918,7 @@ void logAiResponseDebug(int status, String response)
     Serial.print("OpenRouter response length: ");
     Serial.println(response.length());
     Serial.print("OpenRouter response preview: [");
-    Serial.print(debugVisibleText(response, AI_RESPONSE_LOG_MAX_CHARS));
+    Serial.print(debugVisibleText(response, 0));
     Serial.println("]");
 
     int choicesIdx = response.indexOf("\"choices\"");
@@ -894,15 +943,7 @@ void logAiErrorResponse(int status, String response)
     }
 
     Serial.print("OpenRouter error body: ");
-    if (response.length() > AI_ERROR_LOG_MAX_CHARS)
-    {
-        Serial.println(response.substring(0, AI_ERROR_LOG_MAX_CHARS) +
-                       "...<truncated>");
-    }
-    else
-    {
-        Serial.println(response);
-    }
+    Serial.println(debugVisibleText(response, 0));
 }
 
 void logAiUnparseableContent(String content, String response)
@@ -910,29 +951,13 @@ void logAiUnparseableContent(String content, String response)
     if (content.length() > 0)
     {
         Serial.print("OpenRouter content without JSON object: ");
-        if (content.length() > AI_CONTENT_LOG_MAX_CHARS)
-        {
-            Serial.println(content.substring(0, AI_CONTENT_LOG_MAX_CHARS) +
-                           "...<truncated>");
-        }
-        else
-        {
-            Serial.println(content);
-        }
+        Serial.println(debugVisibleText(content, 0));
         return;
     }
 
     Serial.print("OpenRouter response without content field: [");
-    if (response.length() > AI_CONTENT_LOG_MAX_CHARS)
-    {
-        Serial.print(debugVisibleText(response, AI_CONTENT_LOG_MAX_CHARS));
-        Serial.println("]");
-    }
-    else
-    {
-        Serial.print(debugVisibleText(response, AI_CONTENT_LOG_MAX_CHARS));
-        Serial.println("]");
-    }
+    Serial.print(debugVisibleText(response, 0));
+    Serial.println("]");
 }
 
 void logAiParseDebug(String content, String analysis, String response)
@@ -956,13 +981,13 @@ void logAiParseDebug(String content, String analysis, String response)
     if (content.length() > 0)
     {
         Serial.print("OpenRouter parse debug content visible preview: [");
-        Serial.print(debugVisibleText(content, AI_CONTENT_LOG_MAX_CHARS));
+        Serial.print(debugVisibleText(content, 0));
         Serial.println("]");
     }
     if (analysis.length() > 0)
     {
         Serial.print("OpenRouter parse debug extracted JSON preview: [");
-        Serial.print(debugVisibleText(analysis, AI_CONTENT_LOG_MAX_CHARS));
+        Serial.print(debugVisibleText(analysis, 0));
         Serial.println("]");
     }
 }
@@ -1037,23 +1062,6 @@ String analyzeWithAiApi()
 
     String model = selectedAiModel;
     String payload = payloadPrefix + model + payloadSuffix;
-    WiFiClientSecure client;
-    client.setInsecure();
-
-    HTTPClient http;
-    http.setTimeout(60000);
-    if (!http.begin(client, AI_API_URL))
-    {
-        return buildFallbackAnalysisObjectJson(
-            "无法初始化 OpenRouter HTTPS 请求。");
-    }
-
-    http.addHeader("Authorization", "Bearer " + String(AI_API_KEY));
-    http.addHeader("Content-Type", "application/json");
-    http.addHeader("HTTP-Referer", "http://" + WiFi.localIP().toString());
-    http.addHeader("X-Title", "NutriVision ESP32");
-    http.addHeader("Connection", "close");
-
     Serial.println("Calling OpenRouter for nutrition analysis");
     Serial.print("OpenRouter model: ");
     Serial.println(model);
@@ -1062,9 +1070,9 @@ String analyzeWithAiApi()
     Serial.print("OpenRouter image included: ");
     Serial.println(hasImage ? "yes" : "no");
 
-    int status = http.POST(payload);
-    String response = http.getString();
-    http.end();
+    AiHttpResponse httpResponse = postOpenRouterRaw(payload);
+    int status = httpResponse.status;
+    String response = httpResponse.body;
     logAiResponseDebug(status, response);
 
     if (status < 200 || status >= 300)
@@ -1366,17 +1374,6 @@ void setup()
     setupScale();
 
     Serial.println("System Initialized successfully.");
-
-    Serial.println("Commands:");
-    Serial.println("- Type 'capture' to take a photo");
-    Serial.println("- Type 'stream' to start streaming mode");
-    Serial.println("- Type 'res320' for 320x240 resolution");
-    Serial.println("- Type 'res640' for 640x480 resolution");
-    Serial.println("- Type 'res1024' for 1024x768 resolution");
-    Serial.println("- Type 'res1280' for 1280x960 resolution");
-    Serial.println("- Type 'res1600' for 1600x1200 resolution");
-    Serial.println("- Type 'res2048' for 2048x1536 resolution");
-    Serial.println("- Type 'res2592' for 2592x1944 resolution (5MP)");
 }
 
 void loop()
@@ -1384,57 +1381,6 @@ void loop()
     // Handle web server requests
     server.handleClient();
     processPendingAnalysis();
-
-    // Handle serial commands
-    if (Serial.available())
-    {
-        String command = Serial.readStringUntil('\n');
-        command.trim();
-
-        if (command == "capture")
-        {
-            captureImage();
-        }
-        else if (command == "stream")
-        {
-            streamImages();
-        }
-        else if (command == "res320")
-        {
-            myCAM.OV5642_set_JPEG_size(OV5642_320x240);
-            Serial.println("Resolution set to 320x240");
-        }
-        else if (command == "res640")
-        {
-            myCAM.OV5642_set_JPEG_size(OV5642_640x480);
-            Serial.println("Resolution set to 640x480");
-        }
-        else if (command == "res1024")
-        {
-            myCAM.OV5642_set_JPEG_size(OV5642_1024x768);
-            Serial.println("Resolution set to 1024x768");
-        }
-        else if (command == "res1280")
-        {
-            myCAM.OV5642_set_JPEG_size(OV5642_1280x960);
-            Serial.println("Resolution set to 1280x960");
-        }
-        else if (command == "res1600")
-        {
-            myCAM.OV5642_set_JPEG_size(OV5642_1600x1200);
-            Serial.println("Resolution set to 1600x1200");
-        }
-        else if (command == "res2048")
-        {
-            myCAM.OV5642_set_JPEG_size(OV5642_2048x1536);
-            Serial.println("Resolution set to 2048x1536");
-        }
-        else if (command == "res2592")
-        {
-            myCAM.OV5642_set_JPEG_size(OV5642_2592x1944);
-            Serial.println("Resolution set to 2592x1944 (5MP)");
-        }
-    }
 
     float         currentWeight = scale.get_units();
     unsigned long currentTime   = millis();
